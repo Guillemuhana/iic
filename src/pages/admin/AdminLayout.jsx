@@ -31,7 +31,7 @@ export default function AdminLayout() {
   return (
     <div className="admin-shell min-h-full lg:grid lg:grid-cols-[272px_1fr]">
       <aside className="admin-sidebar petrol-hero hidden text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
-        <div className="px-5 pb-7 pt-7"><Logo light full className="admin-sidebar-logo !w-full" /></div>
+        <div className="admin-brand mb-6 shrink-0 bg-white px-5 py-7"><Logo full className="admin-sidebar-logo !w-full" /></div>
         <nav aria-label="Menú principal" className="scrollbar-thin min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-4">
           {NAV_GROUPS.map(group => (
             <div key={group.label}>
@@ -60,11 +60,11 @@ export default function AdminLayout() {
 
       {/* Navegación móvil */}
       <header className="petrol-hero safe-top sticky top-0 z-30 text-white lg:hidden">
-        <div className="flex items-center justify-between gap-3 px-4 pb-3">
-          <InstituteMark light small section="Panel de administración" />
+        <div className="admin-brand flex items-center justify-between gap-3 bg-white px-4 py-4 text-petrol">
+          <InstituteMark small section="Panel de administración" />
           <div className="flex gap-1">
-            <button onClick={() => setMenuOpen(!menuOpen)} className="grid size-10 place-items-center rounded-xl bg-white/10" aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'} aria-expanded={menuOpen} aria-controls="admin-mobile-menu">{menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}</button>
-            <button onClick={signOut} className="grid size-10 place-items-center rounded-xl bg-white/10" aria-label="Cerrar sesión"><LogOut className="size-5" /></button>
+            <button onClick={() => setMenuOpen(!menuOpen)} className="grid size-10 place-items-center rounded-xl bg-fog" aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'} aria-expanded={menuOpen} aria-controls="admin-mobile-menu">{menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}</button>
+            <button onClick={signOut} className="grid size-10 place-items-center rounded-xl bg-fog" aria-label="Cerrar sesión"><LogOut className="size-5" /></button>
           </div>
         </div>
         {menuOpen && <nav id="admin-mobile-menu" aria-label="Menú principal móvil" className="scrollbar-thin max-h-[60vh] space-y-4 overflow-y-auto px-4 pb-4">
@@ -73,7 +73,7 @@ export default function AdminLayout() {
             <div className="grid gap-1 sm:grid-cols-2">{group.items.map(({ to, end, label, icon: Icon }) => <NavLink key={to} to={to} end={end} onClick={() => setMenuOpen(false)} className={({isActive}) => cx('flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold',isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10')}><Icon className="size-4" />{label}</NavLink>)}</div>
           </div>)}
         </nav>}
-        <time dateTime={now.toISOString()} className="block px-4 pb-3 text-xs capitalize text-white/75">{clock.date} · {clock.time} h (Argentina)</time>
+        <time dateTime={now.toISOString()} className="block px-4 py-3 text-xs capitalize text-white/75">{clock.date} · {clock.time} h (Argentina)</time>
       </header>
 
       <div className="min-w-0">
