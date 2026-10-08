@@ -23,14 +23,15 @@ try {
     return route.continue();
   });
   await page.goto(`${process.env.IIC_SCAN_URL || 'https://iic-q945.vercel.app'}/caja/escanear`);
-  await page.locator('input[type=file]').setInputFiles(file);
   const pending = page.waitForResponse(response => response.url().endsWith('/api/scan-ticket') && response.request().method() === 'POST', { timeout: 90000 });
-  await page.getByRole('button', { name: 'Escanear esta foto', exact: true }).click();
+  await page.locator('input[type=file]').setInputFiles(file);
   const response = await pending;
   const result = await response.json();
   if (!response.ok()) throw new Error(result.error || `HTTP ${response.status()}`);
   const sent = response.request().postDataJSON();
   const amount = result.doc?.recibo?.total ?? null;
+  await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+  await page.getByRole('heading', { name: 'Confirmar importe y guardar', exact: true }).waitFor();
   console.log(JSON.stringify({ expected: Number(expectedText), actual: amount, correct: amount === Number(expectedText), clientRegion: sent.amountRegion, review: result.amountReview, preventedWrites: writes }, null, 2));
 } finally {
   await browser?.close();

@@ -41,6 +41,7 @@ export default function ScanFlow() {
   const [cropping, setCropping] = useState(false);
   const [amountPhoto, setAmountPhoto] = useState(null);
   const [amountBusy, setAmountBusy] = useState(false);
+  const [confirmSave, setConfirmSave] = useState(false);
   useEffect(() => setAmountConfirmed(false), [ticket.total, ticket.monto_detalle]);
   const timer = useRef();
   const urls = useRef(new Set());
@@ -56,7 +57,7 @@ export default function ScanFlow() {
     try {
       const prepared = track(await prepareTicketImage(source));
       setPending(prepared);
-      // Let the person check orientation and framing before reading.
+      await read(prepared);
     } catch {
       setError('No se pudo procesar la foto. Probá de nuevo.');
     }
@@ -139,8 +140,8 @@ export default function ScanFlow() {
     setCurrent(0);
   };
 
-  const trySave = () => {
-    if (!amountConfirmed) { toast('Compará el monto con la foto y confirmalo antes de guardar.', 'error'); return; }
+  const trySave = (confirmed = amountConfirmed) => {
+    if (!confirmed) { setConfirmSave(true); return; }
     const blocking = checkTicket(ticket).filter((w) => w.level === 'error');
     if (blocking.length) { toast(blocking[0].message, 'error'); return; }
     if (photos.some((p) => p.boxes.length === 0)) { setAskUnredacted(true); return; }
@@ -354,10 +355,7 @@ export default function ScanFlow() {
                     {(p.doc.recibo || p.doc.transferencia) && <Button variant="outline" className="mt-3 w-full" icon={ScanText} onClick={() => setAmountPhoto(p)}>Seleccionar el importe y volver a leer</Button>}
                   </div>
                 ))}
-                <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-mist p-4 text-sm font-semibold">
-                  <input type="checkbox" className="mt-0.5 size-5 shrink-0 accent-[#0065B3]" checked={amountConfirmed} onChange={(e) => setAmountConfirmed(e.target.checked)} />
-                  Comparé el importe con la foto y confirmo que es correcto.
-                </label>
+                <p className="mt-4 text-sm text-slate">Los datos se completaron automáticamente. Revisá los campos marcados; al tocar Guardar, te mostramos la foto y el importe para confirmarlos.</p>
               </Card>
               <Card className="p-4 sm:p-6">
                 <TicketForm value={ticket} onChange={setTicket} fieldConfidence={meta.fieldConfidence} compact />
@@ -379,7 +377,7 @@ export default function ScanFlow() {
                 <p className="truncate text-xl font-extrabold tabular-nums">{ticket.total != null ? money(ticket.total) : '—'}</p>
               </div>
               <Button variant="outline" onClick={() => { setView('datos'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Revisar</Button>
-              <Button size="lg" icon={Check} loading={saving} disabled={!amountConfirmed} onClick={trySave}>Guardar</Button>
+              <Button size="lg" icon={Check} loading={saving} disabled={amountBusy} onClick={() => trySave()}>Guardar</Button>
             </div>
           </div>
         </>
@@ -402,6 +400,15 @@ export default function ScanFlow() {
         </div>
       )}
 
+      <Modal open={confirmSave} wide onClose={() => setConfirmSave(false)} title="Confirmar importe y guardar"
+        footer={<>
+          <Button variant="outline" onClick={() => { setConfirmSave(false); setView('datos'); }}>Volver a los datos</Button>
+          <Button disabled={ticket.total == null || Number(ticket.total) <= 0} onClick={() => { setAmountConfirmed(true); setConfirmSave(false); trySave(true); }}>El importe es correcto · Guardar</Button>
+        </>}>
+        <p className="mb-4 text-3xl font-extrabold text-petrol">{ticket.total != null ? money(ticket.total) : 'Completá el importe en los datos'}</p>
+        {(photos.find(p => p.doc.recibo) || photo) && <img src={(photos.find(p => p.doc.recibo) || photo).img.previewUrl} alt="Recibo para confirmar el importe antes de guardar" className="max-h-[55vh] w-full rounded-xl object-contain" />}
+        <p className="mt-3 text-sm text-slate">Compará el importe con la foto. Si no coincide, volvé a los datos y corregilo.</p>
+      </Modal>
       <Modal open={cropping} wide onClose={() => setCropping(false)} title="Encuadrar el documento">
         {pending && <DocumentCropper src={pending.previewUrl} onApply={async (blob) => {
           setPending(track(await prepareTicketImage(blob)));
