@@ -38,6 +38,8 @@ export default function ScanFlow() {
   const [amountConfirmed, setAmountConfirmed] = useState(false);
   const [largePhoto, setLargePhoto] = useState(false);
   const [cropping, setCropping] = useState(false);
+  const [amountPhoto, setAmountPhoto] = useState(null);
+  const [amountBusy, setAmountBusy] = useState(false);
   useEffect(() => setAmountConfirmed(false), [ticket.total, ticket.monto_detalle]);
   const timer = useRef();
   const urls = useRef(new Set());
@@ -106,6 +108,27 @@ export default function ScanFlow() {
   };
 
   const setBoxes = (i, boxes) => setPhotos((list) => list.map((p, j) => (j === i ? { ...p, boxes } : p)));
+  const rereadSelectedAmount = async (blob) => {
+    const target = amountPhoto;
+    setAmountBusy(true);
+    setAmountConfirmed(false);
+    try {
+      const prepared = await prepareTicketImage(blob);
+      URL.revokeObjectURL(prepared.previewUrl);
+      const field = target.doc.recibo ? 'recibo' : 'transferencia';
+      const result = await api('scan-amount', { body: { image: prepared.originalDataUrl, field } });
+      setPhotos(list => list.map(p => p.id === target.id ? { ...p, amountReview: result.amountReview, doc: { ...p.doc,
+        ...(field === 'recibo' ? { recibo: { ...p.doc.recibo, total: result.amount, monto_detalle: result.amount == null ? null : String(result.amount) } }
+          : { transferencia: { ...p.doc.transferencia, monto: result.amount } }),
+      } } : p));
+      setTicket(value => ({ ...value, total: result.amount, monto_detalle: result.amount != null ? String(result.amount) : value.monto_detalle }));
+      setMeta(value => ({ ...value, fieldConfidence: { ...value.fieldConfidence, total: result.amountReview.confirmed ? .9 : .4 } }));
+      setAmountPhoto(null);
+      if (result.amount === null) toast('No se pudo confirmar el importe. Comparalo con la foto e ingresalo manualmente.', 'error');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally { setAmountBusy(false); }
+  };
   const removePhoto = (i) => {
     setPhotos((list) => list.filter((_, j) => j !== i));
     setCurrent(0);
@@ -322,6 +345,7 @@ export default function ScanFlow() {
                   <div key={p.id} className={cx('mt-3 rounded-xl p-3 text-sm', p.amountReview.confirmed ? 'bg-fog text-slate' : 'bg-iodine-soft text-iodine')}>
                     <p>{p.amountReview.message}</p>
                     <p className="mt-1">Lectura inicial: {p.amountReview.extracted != null ? money(p.amountReview.extracted) : 'ilegible'} · Segunda lectura: {p.amountReview.checked != null ? money(p.amountReview.checked) : 'sin confirmar'}</p>
+                    {(p.doc.recibo || p.doc.transferencia) && <Button variant="outline" className="mt-3 w-full" icon={ScanText} onClick={() => setAmountPhoto(p)}>Seleccionar el importe y volver a leer</Button>}
                   </div>
                 ))}
                 <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-mist p-4 text-sm font-semibold">
@@ -381,6 +405,10 @@ export default function ScanFlow() {
       <Modal open={largePhoto} wide onClose={() => setLargePhoto(false)} title="Foto escaneada · revisión del importe">
         {photo && <img src={photo.img.previewUrl} alt="Foto original para comparar el importe antes de guardar" className="max-h-[75vh] w-full object-contain" />}
         <p className="mt-3 text-sm text-slate">Importe a guardar: <b>{ticket.total != null ? money(ticket.total) : 'Sin importe'}</b>. La foto original solo se muestra para revisión; se guarda la versión tapada.</p>
+      </Modal>
+      <Modal open={Boolean(amountPhoto)} wide onClose={() => { if (!amountBusy) setAmountPhoto(null); }} title="Releer únicamente el importe">
+        {amountPhoto && <DocumentCropper src={amountPhoto.img.previewUrl} amount onApply={rereadSelectedAmount} />}
+        {amountBusy && <p role="status" className="mt-3 text-sm text-slate">Comparando dos lecturas del recorte…</p>}
       </Modal>
       <Modal open={askUnredacted} onClose={() => setAskUnredacted(false)} title="Hay fotos sin datos tapados"
         footer={<>

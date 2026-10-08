@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { verifyAmount } from '../shared/amount-verification.js';
+import { verifyAmount, verifyVisualReadings } from '../shared/amount-verification.js';
 import { weeklyWindow, nextWeeklySend } from '../shared/report-schedule.js';
 import { normalizeDocument, checkTicket, emptyTicket } from '../shared/ticket-rules.js';
 import { buildWorkbook, buildEmailHtml } from '../api/_lib/report.js';
-import { readTicket } from '../api/_lib/groq.js';
+import { readTicket, rereadAmount } from '../api/_lib/groq.js';
 import sharp from 'sharp';
 import { prepareAmountImage } from '../api/_lib/amount-image.js';
 
@@ -91,6 +91,36 @@ test('Importes: disagreement, thousand separators and unreadable verification re
   assert.equal(normalizeDocument({ recibo: { monto_detalle: '$152.034 + $11.900', total: null } }).recibo.total, null);
   assert.ok(checkTicket({ ...emptyTicket(), total: Infinity }).some((w) => w.level === 'error'));
   assert.ok(checkTicket({ ...emptyTicket(), total: -1 }).some((w) => w.level === 'error'));
+});
+
+test('Focused checks require both literal expressions and the correct money field', () => {
+  const first = { campo: 'recibo', monto_texto: '163.934', literal: '$152.034 = $163.934', confianza: .95 };
+  assert.equal(verifyVisualReadings(first, first, 'recibo').confirmed, true);
+  assert.equal(verifyVisualReadings(first, { ...first, literal: '$163.984' }, 'recibo').confirmed, false);
+  assert.equal(verifyVisualReadings(first, { ...first, literal: null }, 'recibo').confirmed, false);
+  assert.equal(verifyVisualReadings(first, { ...first, campo: 'otro' }, 'recibo').confirmed, false);
+});
+
+test('Selected-region rereading uses no previous guesses and returns no unverified amount', async () => {
+  const previousFetch = globalThis.fetch, previousKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-only';
+  try {
+    const bytes = await sharp({ create: { width: 400, height: 100, channels: 3, background: '#eeeeee' } }).jpeg().toBuffer();
+    const image = `data:image/jpeg;base64,${bytes.toString('base64')}`;
+    let calls = 0, disagree = false;
+    globalThis.fetch = async (_url, options) => {
+      assert.ok(!JSON.stringify(JSON.parse(options.body).messages).includes('163934'));
+      calls++;
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ campo: 'recibo', monto_texto: disagree && calls % 2 === 0 ? '163.984' : '163.934', literal: '$163.934', confianza: .95 }) } }] }) };
+    };
+    assert.equal((await rereadAmount(image, 'recibo')).amount, 163934);
+    assert.equal(calls, 2);
+    disagree = true;
+    assert.equal((await rereadAmount(image, 'recibo')).amount, null);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = previousKey;
+  }
 });
 
 test('Weekly cutoff is Friday noon Argentina, including month/year transitions', () => {

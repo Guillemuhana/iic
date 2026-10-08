@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Button } from './ui';
 
 // Cropping is local; the original is never uploaded to Storage.
-export default function DocumentCropper({ src, onApply }) {
+export default function DocumentCropper({ src, onApply, amount = false }) {
   const image = useRef(null);
   const origin = useRef(null);
   const [box, setBox] = useState({ x: .05, y: .05, w: .9, h: .9 });
@@ -29,7 +29,7 @@ export default function DocumentCropper({ src, onApply }) {
     } finally { setBusy(false); }
   };
   return <div>
-    <p className="mb-4 text-sm text-slate">Arrastrá sobre la foto para seleccionar el documento completo. Incluí el monto, la fecha, las casillas y la aclaración.</p>
+    <p className="mb-4 text-sm text-slate">{amount ? 'Seleccioná toda la línea del importe, incluyendo “Recibí la suma de” o la etiqueta de la transferencia. Si hay =, incluí ambos lados. No incluyas el total del ticket adjunto.' : 'Arrastrá sobre la foto para seleccionar el documento completo. Incluí el monto, la fecha, las casillas y la aclaración.'}</p>
     <div className="relative touch-none select-none overflow-hidden rounded-xl"
       onPointerDown={(e) => { origin.current = point(e); e.currentTarget.setPointerCapture(e.pointerId); }}
       onPointerMove={move} onPointerUp={() => { origin.current = null; }} onPointerCancel={() => { origin.current = null; }}>
@@ -37,6 +37,6 @@ export default function DocumentCropper({ src, onApply }) {
       <div className="pointer-events-none absolute border-2 border-white shadow-[0_0_0_9999px_rgba(18,58,90,.55)]"
         style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%` }} />
     </div>
-    <Button className="mt-4 w-full" disabled={box.w < .1 || box.h < .1} loading={busy} onClick={apply}>Usar este encuadre</Button>
+    <Button className="mt-4 w-full" disabled={box.w < .1 || box.h < .025} loading={busy} onClick={apply}>{amount ? 'Volver a leer este importe' : 'Usar este encuadre'}</Button>
   </div>;
 }

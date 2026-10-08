@@ -1,7 +1,7 @@
 // Two independent visual readings: structured document + financial verification.
 
 import { HttpError } from './supabase.js';
-import { verifyAmount } from '../../shared/amount-verification.js';
+import { verifyAmount, verifyVisualReadings } from '../../shared/amount-verification.js';
 import { prepareAmountImage } from './amount-image.js';
 import { parseAmount } from '../../shared/ticket-rules.js';
 
@@ -113,7 +113,9 @@ export function parseJsonLoose(text) {
 export async function readTicket(dataUrl, { estudios = [], originalImage = dataUrl } = {}) {
   const model = VISION_MODEL();
   const deadline = Date.now() + 52000;
-  const image = { type: 'image_url', image_url: { url: dataUrl } };
+  // Preserve ink colour and faint strokes; contrast is a supporting view, not a replacement.
+  const images = [{ type: 'image_url', image_url: { url: originalImage } }];
+  if (originalImage !== dataUrl) images.push({ type: 'image_url', image_url: { url: dataUrl } });
 
   let data;
   let lastError;
@@ -127,7 +129,7 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
         ...(i === 0 ? { response_format: { type: 'json_object' } } : {}),
         messages: [
           { role: 'system', content: 'Respondés únicamente con JSON válido, sin texto adicional.' },
-          { role: 'user', content: [{ type: 'text', text: EXTRACT_PROMPT(estudios) }, image] },
+          { role: 'user', content: [{ type: 'text', text: EXTRACT_PROMPT(estudios) + '\nLa primera imagen es la original; la segunda, si aparece, es el mismo documento con contraste. Priorizá los trazos originales. Ambas tienen las mismas coordenadas.' }, ...images] },
         ],
       }, { deadline });
       data = parseJsonLoose(out);
@@ -161,10 +163,11 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
         data.recibo?.monto_detalle, check.confianza);
       amountReview.status = candidate == null ? 'unreadable' : 'checked';
       if (check.campo && check.campo !== expectedField) amountReview.confirmed = false;
+      if (check.literal && !verifyAmount(candidate, candidate, check.literal, check.confianza).confirmed) amountReview.confirmed = false;
       if (!amountReview.confirmed && amountImage.focused && candidate != null && check.campo === expectedField) {
         const contrast = await prepareAmountImage(originalImage, data.importe_bbox, data.rotacion, true);
         const other = await checkImage(contrast.url);
-        const agreement = verifyAmount(candidate, other.monto_texto, check.literal, Math.min(Number(check.confianza) || 0, Number(other.confianza) || 0));
+        const agreement = verifyVisualReadings(check, other, expectedField);
         if (agreement.confirmed && other.campo === expectedField && typeof check.literal === 'string' && check.literal.length < 160) {
           // Two focused views must agree, including the literal amount expression.
           amountReview = { ...agreement, extracted: amountReview.extracted, checked: parseAmount(candidate), corrected: true, status: 'focused',
@@ -183,4 +186,22 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
     }
   }
   return { data, ocr, model, amountReview };
+}
+
+/** Independent readings of a user-selected money line, without previous guesses. */
+export async function rereadAmount(image, field) {
+  const deadline = Date.now() + 42000;
+  const model = VISION_MODEL();
+  const color = await prepareAmountImage(image, null, 0);
+  const contrast = await prepareAmountImage(image, null, 0, true);
+  const prompt = `Transcribí únicamente el importe de este recorte. Incluye la etiqueta del campo. El signo $ no es un 4. Si hay =, conservá la expresión completa y tomá solo el resultado a la derecha. Nunca sumes importes ni uses el TOTAL de un ticket adjunto como importe de un recibo. Devolvé JSON: {"campo":"recibo|transferencia|otro", "monto_texto":"importe literal con separadores argentinos o null", "literal":"expresión completa del importe, sin nombres ni firmas", "confianza":0.0}. Si no se reconoce la etiqueta o cualquier dígito es dudoso, monto_texto=null. Leé cada dígito visualmente, sin completar por contexto.`;
+  const read = async (url) => parseJsonLoose(await callGroq({ model, temperature: 0, max_completion_tokens: 512,
+    response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url } }] }],
+  }, { retries: 0, deadline }));
+  // Sequential calls respect limited free-tier request quotas.
+  const first = await read(color.url);
+  const second = await read(contrast.url);
+  const review = verifyVisualReadings(first, second, field);
+  return { amount: review.confirmed ? review.checked : null, amountReview: { ...review, status: 'selected_region',
+    message: review.confirmed ? 'Las dos lecturas del recorte coinciden. Confirmá el importe con la foto antes de guardar.' : 'El recorte sigue siendo ambiguo. Ingresá el importe que ves en el recibo o repetí la foto.' }, model };
 }
