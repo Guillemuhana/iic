@@ -46,9 +46,11 @@ export function AuthProvider({ children }) {
 
   const signIn = async (email, password) => {
     setProfileError(null);
-    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+    const login = email.trim().toLowerCase();
+    const authEmail = login === 'administracion' ? 'administracion@iic.local' : login;
+    const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail, password });
     if (error) {
-      const msg = /invalid/i.test(error.message) ? 'Email o contraseña incorrectos.'
+      const msg = /invalid/i.test(error.message) ? 'Usuario o contraseña incorrectos.'
         : /banned|disabled/i.test(error.message) ? 'Tu usuario está desactivado.'
         : error.message;
       throw new Error(msg);

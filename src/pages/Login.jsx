@@ -82,8 +82,8 @@ export default function Login() {
           )}
 
           <form onSubmit={submit} className={IS_DEMO ? 'hidden' : 'mt-8 space-y-5'}>
-            <Field label="Email">
-              <input className="field h-12" type="email" autoComplete="username" inputMode="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Field label="Usuario o email">
+              <input className="field h-12" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} />
             </Field>
             <Field label="Contraseña">
               <div className="relative">

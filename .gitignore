@@ -7,3 +7,5 @@ dist
 .DS_Store
 *.log
 dist-demo
+
+.vercel
