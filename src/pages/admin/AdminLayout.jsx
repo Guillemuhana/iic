@@ -70,7 +70,7 @@ export default function AdminLayout() {
         {menuOpen && <nav id="admin-mobile-menu" aria-label="Menú principal móvil" className="scrollbar-thin max-h-[60vh] space-y-4 overflow-y-auto px-4 pb-4">
           {NAV_GROUPS.map(group => <div key={group.label}>
             <p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-white/45">{group.label}</p>
-            <div className="grid gap-1 sm:grid-cols-2">{group.items.map(({ to, end, label, icon: Icon }) => <NavLink key={to} to={to} end={end} onClick={() => setMenuOpen(false)} className={({isActive}) => cx('flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold',isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10')}><Icon className="size-4" />{label}</NavLink>)}</div>
+            <div className="grid gap-1 sm:grid-cols-2">{group.items.map(({ to, end, label, icon: Icon }) => <NavLink key={to} to={to} end={end} onClick={() => setMenuOpen(false)} className={({isActive}) => cx('admin-nav-link flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold',isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10')}><Icon className="size-4" />{label}</NavLink>)}</div>
           </div>)}
         </nav>}
         <time dateTime={now.toISOString()} className="block px-4 py-3 text-xs capitalize text-white/75">{clock.date} · {clock.time} h (Argentina)</time>
