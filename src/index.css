@@ -150,9 +150,6 @@ body {
 .admin-nav-link:hover { transform: translateX(3px); }
 .admin-scan-button { transition: transform .2s, box-shadow .2s, background .2s; box-shadow: 0 8px 24px -12px rgb(0 0 0 / .4); }
 .admin-scan-button:hover { transform: translateY(-2px); box-shadow: 0 12px 28px -12px rgb(0 0 0 / .5); }
-.admin-topbar { background: rgb(255 255 255 / .88); position: relative; }
-.admin-topbar::after { content: ""; position: absolute; left: 40px; right: 40px; bottom: -1px; height: 1px; background: linear-gradient(90deg, #0065b3, #d9e7f1 40%, transparent); }
-.admin-date { border: 1px solid #e0eaf2; border-radius: 999px; padding: 9px 16px; background: #f6f9fc; }
 .admin-page-head { padding: 24px; border: 1px solid #e0e9f1; border-radius: 20px; background: linear-gradient(120deg, #fff 25%, #edf5fc); box-shadow: 0 12px 35px -28px rgb(18 58 90 / .35); }
 .admin-main { animation: admin-enter .5s ease-out both; }
 .admin-dashboard .surface { box-shadow: 0 3px 6px -4px rgb(18 58 90 / .08), 0 16px 36px -28px rgb(18 58 90 / .28); transition: box-shadow .25s, border-color .25s; }

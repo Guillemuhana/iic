@@ -55,6 +55,10 @@ export default function AdminLayout() {
             </div>
             <button onClick={signOut} className="rounded-lg p-1.5 text-white/70 hover:bg-white/10 hover:text-white" aria-label="Cerrar sesión"><LogOut className="size-4" /></button>
           </div>
+          <time dateTime={now.toISOString()} className="block px-1 text-xs text-white/60">
+            <span className="block capitalize">{clock.date}</span>
+            <span className="mt-1 block font-semibold tabular-nums text-white/85">{clock.time} h · Argentina</span>
+          </time>
         </div>
       </aside>
 
@@ -72,15 +76,11 @@ export default function AdminLayout() {
             <p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-white/45">{group.label}</p>
             <div className="grid gap-1 sm:grid-cols-2">{group.items.map(({ to, end, label, icon: Icon }) => <NavLink key={to} to={to} end={end} onClick={() => setMenuOpen(false)} className={({isActive}) => cx('admin-nav-link flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold',isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10')}><Icon className="size-4" />{label}</NavLink>)}</div>
           </div>)}
+          <time dateTime={now.toISOString()} className="block border-t border-white/15 pt-3 text-xs capitalize text-white/75">{clock.date} · {clock.time} h (Argentina)</time>
         </nav>}
-        <time dateTime={now.toISOString()} className="block px-4 py-3 text-xs capitalize text-white/75">{clock.date} · {clock.time} h (Argentina)</time>
       </header>
 
       <div className="min-w-0">
-        <div className="admin-topbar hidden items-center justify-between border-b border-mist bg-white/80 px-10 py-3.5 backdrop-blur lg:flex">
-          <p className="text-sm font-semibold text-petrol">Panel de administración <span className="font-normal text-slate">· Reintegros de viáticos</span></p>
-          <time dateTime={now.toISOString()} className="admin-date flex items-center gap-3 text-[13px] text-slate"><span className="capitalize">{clock.date}</span><span className="border-l border-mist pl-3 font-bold tabular-nums text-petrol">{clock.time} <span className="font-normal text-slate">h · Argentina</span></span></time>
-        </div>
         <main className="admin-main min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-9">
           <Outlet context={{ clock }} />
         </main>
