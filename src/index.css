@@ -97,3 +97,43 @@ body {
     linear-gradient(180deg, #123A5A 0%, #174D78 100%);
 }
 .surface { background: #fff; border: 1px solid var(--color-mist); box-shadow: 0 1px 2px rgb(15 52 64 / .04), 0 8px 24px -18px rgb(15 52 64 / .25); }
+
+
+/* Institutional portal */
+.login-shell {
+  background: radial-gradient(ellipse at 95% 15%, #dceaf7 0%, transparent 48%), #f4f7fb;
+}
+.login-institute {
+  background: radial-gradient(ellipse at 15% 45%, #fff 0%, #f8fbfd 45%, #eaf2f9 100%);
+  border-right: 1px solid #dde7f0;
+}
+.login-orbit {
+  position: absolute;
+  width: 680px;
+  height: 680px;
+  border: 1px solid rgb(0 101 179 / .09);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: institute-float 14s ease-in-out infinite alternate;
+}
+.login-orbit-one { right: -420px; top: -320px; }
+.login-orbit-two { left: -440px; bottom: -420px; width: 760px; height: 760px; animation-delay: -7s; }
+.login-pillar {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  border: 1px solid var(--color-mist);
+  border-radius: 999px;
+  background: rgb(255 255 255 / .75);
+  padding: .65rem 1rem;
+  font-size: 12px;
+  color: var(--color-petrol);
+}
+.login-card { box-shadow: 0 24px 80px -30px rgb(18 58 90 / .22), 0 2px 8px rgb(18 58 90 / .03); }
+.login-reveal { animation: institute-reveal .75s ease-out both; }
+.login-card.login-reveal { animation-delay: .12s; }
+.login-submit { transition: transform .2s, box-shadow .2s, background-color .2s; }
+.login-submit:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px -8px rgb(0 101 179 / .5); }
+.login-submit:active:not(:disabled) { transform: translateY(0); }
+@keyframes institute-reveal { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes institute-float { from { transform: translateY(0); } to { transform: translateY(30px); } }
