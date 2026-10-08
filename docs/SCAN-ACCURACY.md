@@ -74,6 +74,18 @@ solo efectuó descargas GET de recursos, sin transmitir la imagen.
 Para repetir la prueba contra la app publicada, con orientación/localización:
 `node scripts/benchmark-scan.mjs 'ruta-al-recibo.jpg' 163934 0 locate`.
 
+La validación final se hizo desde la interfaz publicada en Chrome: elegir la foto
+original, pulsar `Escanear esta foto` y esperar la revisión. Resultado **163934**,
+región local **[75,331,985,403]**, candidato inicial **163984** corregido por las
+lecturas ampliadas. No hubo escrituras a tickets ni Storage. Una variante de
+preparación de la herramienta Node pidió revisión; por eso la prueba de interfaz
+es la referencia para el recorrido de usuario y no se afirma robustez para todas
+las compresiones o documentos.
+
+`scripts/benchmark-browser.mjs` reproduce esa prueba. Requiere Chrome y Playwright
+como herramienta temporal, la contraseña por variable de entorno y bloquea
+escrituras durante la comprobación. No pulsa Guardar.
+
 Documentación de OCR local: https://github.com/naptha/tesseract.js/blob/master/docs/api.md
 
 ## Medición reproducible
