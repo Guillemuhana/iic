@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
 import { UserPlus, KeyRound } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -43,6 +44,7 @@ export default function Users() {
 
   return (
     <div className="mx-auto max-w-5xl">
+      <Link to="/panel/configuracion" className="mb-4 inline-flex text-sm font-semibold text-petrol-3 hover:underline">← Volver a Configuración</Link>
       <PageHead title="Usuarios" text="Quiénes pueden entrar al sistema y qué pueden hacer."
         actions={<Button icon={UserPlus} onClick={() => setForm({ full_name: '', email: '', password: genPass(), role: 'administracion' })}>Nuevo usuario</Button>} />
 

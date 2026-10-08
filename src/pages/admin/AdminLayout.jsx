@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { instituteClock } from '../../../shared/institute-clock.js';
 import { NavLink, Outlet } from 'react-router-dom';
-import { BarChart3, Receipt, Send, Users, Settings, LogOut, CalendarDays, Menu, X } from 'lucide-react';
+import { BarChart3, Receipt, Send, Settings, LogOut, CalendarDays, Menu, X } from 'lucide-react';
 import { Logo, InstituteMark, cx } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 
@@ -13,7 +13,6 @@ const NAV_GROUPS = [
     { to: '/panel/turnos', label: 'Turnos', icon: CalendarDays },
   ] },
   { label: 'Administración', items: [
-    { to: '/panel/usuarios', label: 'Usuarios', icon: Users },
     { to: '/panel/configuracion', label: 'Configuración', icon: Settings },
   ] },
 ];

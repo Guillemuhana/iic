@@ -1,6 +1,7 @@
 import { WEEKDAYS, scheduleConfig, scheduleError, nextWeeklySend } from '../../../shared/report-schedule.js';
 import { useEffect, useState } from 'react';
-import { Save } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Save, Users, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button, Card, Field, Spinner, useToast } from '../../components/ui';
 import { PageHead } from './AdminLayout';
@@ -50,6 +51,11 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-3xl">
       <PageHead title="Configuración" actions={<Button icon={Save} loading={busy} onClick={save}>Guardar cambios</Button>} />
       <div className="space-y-6">
+        <Link to="/panel/configuracion/usuarios" className="surface flex items-center gap-4 rounded-2xl p-6 transition-colors hover:border-petrol-3">
+          <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-fog text-petrol-3"><Users className="size-6" /></span>
+          <span className="min-w-0 flex-1"><span className="block font-bold text-petrol">Usuarios y accesos</span><span className="mt-1 block text-sm text-slate">Administrar cuentas, roles y contraseñas.</span></span>
+          <ChevronRight className="size-5 shrink-0 text-slate" />
+        </Link>
         <Card className="p-6">
           <h2 className="font-bold">Contadora</h2>
           <p className="mt-1 text-sm text-slate">A quién le llegan los comprobantes por email.</p>

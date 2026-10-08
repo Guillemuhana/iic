@@ -53,7 +53,8 @@ export default function App() {
                 <Route path="turnos" element={<Appointments />} />
                 <Route path="comprobantes" element={<Tickets />} />
                 <Route path="envios" element={<Reports />} />
-                <Route path="usuarios" element={<Users />} />
+                <Route path="usuarios" element={<Navigate to="/panel/configuracion/usuarios" replace />} />
+                <Route path="configuracion/usuarios" element={<Users />} />
                 <Route path="configuracion" element={<SettingsPage />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
