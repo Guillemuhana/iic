@@ -5,7 +5,6 @@ import Camera from '../../components/Camera';
 // Solo en la compilación de demo (en producción esta rama se elimina).
 const DemoCamera = import.meta.env.VITE_DEMO === '1' ? lazy(() => import('../../demo/DemoCamera')) : null;
 import TicketForm from '../../components/TicketForm';
-import ThermalTicket from '../../components/ThermalTicket';
 import RedactionEditor from '../../components/RedactionEditor';
 import DocumentCropper from '../../components/DocumentCropper';
 import { Button, Card, Modal, useToast, cx } from '../../components/ui';
@@ -24,7 +23,7 @@ export default function ScanFlow() {
   const nav = useNavigate();
   const toast = useToast();
   const { profile } = useAuth();
-  const [stage, setStage] = useState('camera'); // camera | check | reading | review | saved
+  const [stage, setStage] = useState('camera'); // camera | check | reading | review
   const [pending, setPending] = useState(null);  // foto recién sacada, antes de leer
   const [photos, setPhotos] = useState([]);      // fotos ya leídas
   const [current, setCurrent] = useState(0);
@@ -33,20 +32,17 @@ export default function ScanFlow() {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(0);
-  const [saved, setSaved] = useState(null);
   const [view, setView] = useState('datos');
   const [askUnredacted, setAskUnredacted] = useState(false);
-  const [amountConfirmed, setAmountConfirmed] = useState(false);
   const [largePhoto, setLargePhoto] = useState(false);
   const [cropping, setCropping] = useState(false);
   const [amountPhoto, setAmountPhoto] = useState(null);
   const [amountBusy, setAmountBusy] = useState(false);
-  const [confirmSave, setConfirmSave] = useState(false);
-  useEffect(() => setAmountConfirmed(false), [ticket.total, ticket.monto_detalle]);
+  const saveInFlight = useRef(false);
   const timer = useRef();
   const urls = useRef(new Set());
 
-  useEffect(() => () => urls.current.forEach((u) => URL.revokeObjectURL(u)), []);
+  useEffect(() => () => { clearInterval(timer.current); urls.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
 
   const track = (prepared) => { urls.current.add(prepared.previewUrl); return prepared; };
 
@@ -104,7 +100,6 @@ export default function ScanFlow() {
       }));
       setPending(null);
       setStage('review');
-      setAmountConfirmed(false);
       setView('datos');
     } catch (e) {
       setError(e.message);
@@ -118,7 +113,6 @@ export default function ScanFlow() {
   const rereadSelectedAmount = async (blob) => {
     const target = amountPhoto;
     setAmountBusy(true);
-    setAmountConfirmed(false);
     try {
       const prepared = track(await prepareTicketImage(blob));
       const field = target.doc.recibo ? 'recibo' : 'transferencia';
@@ -140,8 +134,8 @@ export default function ScanFlow() {
     setCurrent(0);
   };
 
-  const trySave = (confirmed = amountConfirmed) => {
-    if (!confirmed) { setConfirmSave(true); return; }
+  const trySave = () => {
+    if (saveInFlight.current || amountBusy) return;
     const blocking = checkTicket(ticket).filter((w) => w.level === 'error');
     if (blocking.length) { toast(blocking[0].message, 'error'); return; }
     if (photos.some((p) => p.boxes.length === 0)) { setAskUnredacted(true); return; }
@@ -149,6 +143,8 @@ export default function ScanFlow() {
   };
 
   const save = async () => {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
     setAskUnredacted(false);
     setSaving(true);
     const uploaded = [];
@@ -179,25 +175,25 @@ export default function ScanFlow() {
       };
       const { data, error: dbErr } = await supabase.from('tickets').insert(payload).select().single();
       if (dbErr) throw new Error(dbErr.code === '23505' ? 'Este comprobante ya fue cargado.' : dbErr.message);
-      setSaved(data);
-      setStage('saved');
+      if (!data?.id) throw new Error('No se pudo confirmar el guardado. Volvé a intentar.');
+      toast('Recibo guardado. Ya podés escanear otro.');
+      nav('/caja', { replace: true });
     } catch (e) {
       if (uploaded.length) await supabase.storage.from('tickets').remove(uploaded);
       toast(e.message, 'error');
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
 
   const restartAll = () => {
     setPhotos([]); setTicket(emptyTicket()); setMeta({ fieldConfidence: {}, duplicate: null, observaciones: [] });
-    setSaved(null); setError(null); setPending(null); setCurrent(0);
-    setAmountConfirmed(false);
+    setError(null); setPending(null); setCurrent(0);
     setStage('camera');
   };
 
   const back = () => {
-    if (stage === 'saved') return nav('/caja');
     if (photos.length && stage !== 'review') { setPending(null); setError(null); return setStage('review'); }
     if (photos.length) return restartAll();
     nav(-1);
@@ -221,7 +217,7 @@ export default function ScanFlow() {
         <div className="min-w-0 flex-1">
           <p className="inst-name truncate text-[12px] text-slate">Instituto de Investigaciones Clínicas de Córdoba</p>
           <h1 className="truncate text-[17px] font-bold leading-tight">
-            {stage === 'review' ? 'Revisá los datos' : stage === 'saved' ? 'Recibo guardado' : stage === 'reading' ? 'Leyendo la foto' : 'Foto'}
+            {stage === 'review' ? 'Revisá los datos' : stage === 'reading' ? 'Leyendo la foto' : 'Foto'}
           </h1>
         </div>
       </header>
@@ -293,13 +289,6 @@ export default function ScanFlow() {
 
       {stage === 'review' && (
         <>
-          <div className="sticky top-[65px] z-10 grid grid-cols-2 gap-1 border-b border-mist bg-white p-1.5 lg:hidden">
-            {[['datos', 'Datos leídos'], ['fotos', `Fotos y tapado (${photos.length})`]].map(([v, label]) => (
-              <button key={v} onClick={() => setView(v)} className={cx('h-9 rounded-lg text-sm font-semibold', view === v ? 'bg-petrol text-white' : 'text-slate')}>
-                {label}
-              </button>
-            ))}
-          </div>
           <div className="mx-auto grid max-w-6xl gap-6 px-4 pb-36 pt-5 lg:grid-cols-[1.1fr_1fr]">
             <aside className="space-y-4">
               <div className="lg:sticky lg:top-24">
@@ -326,14 +315,18 @@ export default function ScanFlow() {
                       )}
                     </div>
                     <Button variant="outline" icon={Maximize2} className="mb-3 w-full" onClick={() => setLargePhoto(true)}>Ampliar foto para revisar el importe</Button>
-                    <RedactionEditor src={photo.img.previewUrl} boxes={photo.boxes} onChange={(b) => setBoxes(current, b)} />
-                    <p className="mt-3 text-[12.5px] text-slate">Se guarda solo la foto con estos datos tapados. Lo tapado no se puede recuperar.</p>
+                    <img src={photo.img.previewUrl} alt="Foto del recibo para corroborar los datos" className="max-h-[45vh] w-full rounded-2xl border border-mist bg-white object-contain lg:max-h-[65vh]" />
+                    <details open={view === 'fotos' ? true : undefined} className="mt-3 rounded-xl border border-mist bg-white p-3">
+                      <summary className="cursor-pointer text-sm font-semibold">Revisar datos tapados en la copia guardada</summary>
+                      <div className="mt-3"><RedactionEditor src={photo.img.previewUrl} boxes={photo.boxes} onChange={(b) => setBoxes(current, b)} /></div>
+                      <p className="mt-3 text-xs text-slate">La foto se guarda con los datos personales tapados.</p>
+                    </details>
                   </>
                 )}
               </div>
             </aside>
 
-            <div className={cx('min-w-0 space-y-5 lg:block', view === 'datos' ? 'block' : 'hidden')}>
+            <div className="min-w-0 space-y-5">
               <ReadSummary photos={photos} warnings={warnings} meta={meta} onPhotos={() => setView('fotos')} />
               {meta.duplicate && (
                 <Card className="flex gap-3 border-lesion/30 bg-lesion-soft p-4 text-sm text-lesion">
@@ -345,8 +338,9 @@ export default function ScanFlow() {
                 </Card>
               )}
               <Card className="p-4 sm:p-6">
-                <p className="text-xs font-bold uppercase tracking-wide text-slate">Importe a confirmar</p>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate">Total del recibo</p>
                 <p className="mt-2 text-4xl font-extrabold tabular-nums text-petrol">{ticket.total != null ? money(ticket.total) : 'Sin importe legible'}</p>
+                <details className="mt-3"><summary className="cursor-pointer text-sm font-semibold">Revisar lectura del importe</summary>
                 {photos.filter((p) => p.amountReview).map((p) => (
                   <div key={p.id} className={cx('mt-3 rounded-xl p-3 text-sm', p.amountReview.confirmed ? 'bg-fog text-slate' : 'bg-iodine-soft text-iodine')}>
                     <p>{p.amountReview.message}</p>
@@ -354,8 +348,8 @@ export default function ScanFlow() {
                     <p className="mt-1">Lectura inicial: {p.amountReview.extracted != null ? money(p.amountReview.extracted) : 'ilegible'} · Segunda lectura: {p.amountReview.checked != null ? money(p.amountReview.checked) : 'sin confirmar'}</p>
                     {(p.doc.recibo || p.doc.transferencia) && <Button variant="outline" className="mt-3 w-full" icon={ScanText} onClick={() => setAmountPhoto(p)}>Seleccionar el importe y volver a leer</Button>}
                   </div>
-                ))}
-                <p className="mt-4 text-sm text-slate">Los datos se completaron automáticamente. Revisá los campos marcados; al tocar Guardar, te mostramos la foto y el importe para confirmarlos.</p>
+                ))}</details>
+                <p className="mt-4 text-sm text-slate">Compará el paciente, el estudio, la fecha y el importe con la foto. Podés corregir cualquier campo. Si está todo bien, tocá Confirmar y guardar.</p>
               </Card>
               <Card className="p-4 sm:p-6">
                 <TicketForm value={ticket} onChange={setTicket} fieldConfidence={meta.fieldConfidence} compact />
@@ -371,44 +365,17 @@ export default function ScanFlow() {
             </div>
           </div>
           <div className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-mist bg-white/95 px-4 pt-3 backdrop-blur">
-            <div className="mx-auto flex max-w-6xl items-center gap-3">
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[12px] text-slate">{[ticket.estudio, ticket.visita, [ticket.paciente_iniciales, ticket.paciente_numero].filter(Boolean).join(' ')].filter(Boolean).join(' · ') || 'Total a guardar'}</p>
                 <p className="truncate text-xl font-extrabold tabular-nums">{ticket.total != null ? money(ticket.total) : '—'}</p>
               </div>
-              <Button variant="outline" onClick={() => { setView('datos'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Revisar</Button>
-              <Button size="lg" icon={Check} loading={saving} disabled={amountBusy} onClick={() => trySave()}>Guardar</Button>
+              <Button className="w-full sm:w-auto" size="lg" icon={Check} loading={saving} disabled={amountBusy || saving} onClick={trySave}>Confirmar y guardar</Button>
             </div>
           </div>
         </>
       )}
 
-      {stage === 'saved' && saved && (
-        <div className="mx-auto max-w-sm px-5 py-8">
-          <div className="mb-6 flex items-center gap-3">
-            <span className="grid size-11 shrink-0 place-items-center rounded-full bg-saline text-white"><Check strokeWidth={3} /></span>
-            <div>
-              <p className="font-bold">Listo, quedó guardado</p>
-              <p className="text-sm text-slate">{saved.datos_ocultos} dato{saved.datos_ocultos === 1 ? '' : 's'} personal{saved.datos_ocultos === 1 ? '' : 'es'} tapado{saved.datos_ocultos === 1 ? '' : 's'}. Se incluye en el reporte semanal del viernes a las 12:00.</p>
-            </div>
-          </div>
-          <ThermalTicket t={saved} printing />
-          <div className="mt-8 grid gap-3">
-            <Button size="xl" icon={CameraIcon} onClick={restartAll}>Escanear otro recibo</Button>
-            <Button variant="ghost" size="lg" onClick={() => nav('/caja')}>Volver al inicio</Button>
-          </div>
-        </div>
-      )}
-
-      <Modal open={confirmSave} wide onClose={() => setConfirmSave(false)} title="Confirmar importe y guardar"
-        footer={<>
-          <Button variant="outline" onClick={() => { setConfirmSave(false); setView('datos'); }}>Volver a los datos</Button>
-          <Button disabled={ticket.total == null || Number(ticket.total) <= 0} onClick={() => { setAmountConfirmed(true); setConfirmSave(false); trySave(true); }}>El importe es correcto · Guardar</Button>
-        </>}>
-        <p className="mb-4 text-3xl font-extrabold text-petrol">{ticket.total != null ? money(ticket.total) : 'Completá el importe en los datos'}</p>
-        {(photos.find(p => p.doc.recibo) || photo) && <img src={(photos.find(p => p.doc.recibo) || photo).img.previewUrl} alt="Recibo para confirmar el importe antes de guardar" className="max-h-[55vh] w-full rounded-xl object-contain" />}
-        <p className="mt-3 text-sm text-slate">Compará el importe con la foto. Si no coincide, volvé a los datos y corregilo.</p>
-      </Modal>
       <Modal open={cropping} wide onClose={() => setCropping(false)} title="Encuadrar el documento">
         {pending && <DocumentCropper src={pending.previewUrl} onApply={async (blob) => {
           setPending(track(await prepareTicketImage(blob)));
@@ -453,7 +420,7 @@ function ReadSummary({ photos, warnings, meta, onPhotos }) {
           {meta.observaciones.map((o) => <p key={o} className="mt-1 opacity-90">{o}</p>)}
         </div>
       </div>
-      <button onClick={onPhotos} className="flex w-full items-center gap-3 rounded-2xl bg-petrol px-4 py-3 text-left text-white lg:pointer-events-none">
+      <button onClick={onPhotos} className="flex w-full items-center gap-3 rounded-2xl bg-fog px-4 py-3 text-left text-slate">
         <ShieldCheck className="size-5 shrink-0 text-saline" />
         <span className="text-sm">
           <b>{tapas} dato{tapas === 1 ? '' : 's'} personal{tapas === 1 ? '' : 'es'} tapado{tapas === 1 ? '' : 's'}</b> en {photos.length} foto{photos.length === 1 ? '' : 's'} (firma, nombre, CUIT, cuenta). <span className="underline lg:no-underline">Revisar</span>
