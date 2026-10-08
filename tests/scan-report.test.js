@@ -5,7 +5,7 @@ import { verifyAmount, verifyVisualReadings } from '../shared/amount-verificatio
 import { weeklyWindow, nextWeeklySend } from '../shared/report-schedule.js';
 import { normalizeDocument, checkTicket, emptyTicket } from '../shared/ticket-rules.js';
 import { buildWorkbook, buildEmailHtml } from '../api/_lib/report.js';
-import { readTicket, rereadAmount } from '../api/_lib/groq.js';
+import { readTicket, rereadAmount, rateLimitDelay } from '../api/_lib/groq.js';
 import sharp from 'sharp';
 import { prepareAmountImage } from '../api/_lib/amount-image.js';
 
@@ -101,6 +101,27 @@ test('Focused checks require both literal expressions and the correct money fiel
   assert.equal(verifyVisualReadings(first, { ...first, campo: 'otro' }, 'recibo').confirmed, false);
 });
 
+test('Rate-limit waits respect provider hints and the server deadline', () => {
+  assert.equal(rateLimitDelay('2', 10000), 2250);
+  assert.equal(rateLimitDelay('60', 52000), null);
+  assert.equal(rateLimitDelay('2', 3000), null);
+  assert.equal(rateLimitDelay(null, 52000), null);
+});
+
+test('Daily quota errors do not trigger repeated whole-document requests', async () => {
+  const previousFetch = globalThis.fetch, previousKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-only';
+  try {
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; return { status: 429, headers: { get: () => '60' } }; };
+    await assert.rejects(readTicket('data:image/jpeg;base64,test'), /Esperá 60 segundos/);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = previousKey;
+  }
+});
+
 test('Selected-region rereading uses no previous guesses and returns no unverified amount', async () => {
   const previousFetch = globalThis.fetch, previousKey = process.env.GROQ_API_KEY;
   process.env.GROQ_API_KEY = 'test-only';
@@ -113,7 +134,11 @@ test('Selected-region rereading uses no previous guesses and returns no unverifi
       calls++;
       return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ campo: 'recibo', monto_texto: disagree && calls % 2 === 0 ? '163.984' : '163.934', literal: '$163.934', confianza: .95 }) } }] }) };
     };
-    assert.equal((await rereadAmount(image, 'recibo')).amount, 163934);
+    const result = await rereadAmount(image, 'recibo');
+    assert.equal(result.amount, null);
+    assert.equal(result.suggestedAmount, 163934);
+    assert.equal(result.amountReview.confirmed, false);
+    assert.equal(result.amountReview.readingsAgree, true);
     assert.equal(calls, 2);
     disagree = true;
     assert.equal((await rereadAmount(image, 'recibo')).amount, null);

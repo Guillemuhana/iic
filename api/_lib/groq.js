@@ -53,10 +53,18 @@ Reglas:
   En un comprobante de transferencia, el destinatario es el paciente: tapá su nombre, banco/cuenta CBU/CVU/alias y CUIT/CUIL.
 - "bbox" en coordenadas de la imagen TAL COMO LA RECIBÍS (sin girarla), normalizadas de 0 a 1000: x1,y1 esquina superior izquierda, x2,y2 inferior derecha. Abarcá el dato completo con margen.`;
 
+export function rateLimitDelay(header, remaining) {
+  const seconds = Number(header);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const delay = Math.ceil(seconds * 1000) + 250;
+  return delay <= 20000 && remaining > delay + 3000 ? delay : null;
+}
+
 async function callGroq(body, { retries = 1, deadline = Date.now() + 45000 } = {}) {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new HttpError(500, 'Falta GROQ_API_KEY en las variables de entorno.');
   let lastErr;
+  let rateRetried = false;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const remaining = deadline - Date.now();
@@ -67,7 +75,19 @@ async function callGroq(body, { retries = 1, deadline = Date.now() + 45000 } = {
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (r.status === 429 || r.status >= 500) {
+      if (r.status === 429) {
+        const header = r.headers?.get('retry-after');
+        const delay = rateLimitDelay(header, deadline - Date.now());
+        if (!rateRetried && delay !== null) {
+          rateRetried = true;
+          await new Promise(ok => setTimeout(ok, delay));
+          attempt--;
+          continue;
+        }
+        const seconds = Math.ceil(Number(header));
+        throw new HttpError(429, `Se alcanzó el límite de lecturas de Groq. ${Number.isFinite(seconds) && seconds > 0 ? `Esperá ${seconds} segundos` : 'Esperá un minuto'} y volvé a intentar. El importe no se confirmó.`);
+      }
+      if (r.status >= 500) {
         lastErr = new HttpError(502, `Groq respondió ${r.status}. Probá de nuevo en unos segundos.`);
         await new Promise((ok) => setTimeout(ok, 800 * (attempt + 1)));
         continue;
@@ -115,7 +135,6 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
   const deadline = Date.now() + 52000;
   // Preserve ink colour and faint strokes; contrast is a supporting view, not a replacement.
   const images = [{ type: 'image_url', image_url: { url: originalImage } }];
-  if (originalImage !== dataUrl) images.push({ type: 'image_url', image_url: { url: dataUrl } });
 
   let data;
   let lastError;
@@ -129,12 +148,13 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
         ...(i === 0 ? { response_format: { type: 'json_object' } } : {}),
         messages: [
           { role: 'system', content: 'Respondés únicamente con JSON válido, sin texto adicional.' },
-          { role: 'user', content: [{ type: 'text', text: EXTRACT_PROMPT(estudios) + '\nLa primera imagen es la original; la segunda, si aparece, es el mismo documento con contraste. Priorizá los trazos originales. Ambas tienen las mismas coordenadas.' }, ...images] },
+          { role: 'user', content: [{ type: 'text', text: EXTRACT_PROMPT(estudios) }, ...images] },
         ],
       }, { deadline });
       data = parseJsonLoose(out);
     } catch (err) {
       lastError = err;
+      if (err instanceof HttpError && err.status === 429) throw err;
     }
   }
   if (!data) throw new HttpError(502, lastError?.message || 'No se pudo interpretar el ticket.');
@@ -202,6 +222,9 @@ export async function rereadAmount(image, field) {
   const first = await read(color.url);
   const second = await read(contrast.url);
   const review = verifyVisualReadings(first, second, field);
-  return { amount: review.confirmed ? review.checked : null, amountReview: { ...review, status: 'selected_region',
-    message: review.confirmed ? 'Las dos lecturas del recorte coinciden. Confirmá el importe con la foto antes de guardar.' : 'El recorte sigue siendo ambiguo. Ingresá el importe que ves en el recibo o repetí la foto.' }, model };
+  // Real handwriting benchmark: the same model repeated the same wrong digit twice.
+  // Agreement is evidence for review, not grounds to overwrite a financial total.
+  return { amount: null, suggestedAmount: review.confirmed ? review.checked : null,
+    amountReview: { ...review, confirmed: false, readingsAgree: review.confirmed, status: 'selected_region',
+    message: review.confirmed ? 'Las lecturas del recorte coinciden, pero pueden repetir el mismo error. Compará las cifras con la foto e ingresá el importe correcto.' : 'El recorte sigue siendo ambiguo. Ingresá el importe que ves en el recibo o repetí la foto.' }, model };
 }

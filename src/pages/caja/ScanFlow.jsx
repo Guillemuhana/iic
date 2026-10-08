@@ -124,7 +124,7 @@ export default function ScanFlow() {
       setTicket(value => ({ ...value, total: result.amount, monto_detalle: result.amount != null ? String(result.amount) : value.monto_detalle }));
       setMeta(value => ({ ...value, fieldConfidence: { ...value.fieldConfidence, total: result.amountReview.confirmed ? .9 : .4 } }));
       setAmountPhoto(null);
-      if (result.amount === null) toast('No se pudo confirmar el importe. Comparalo con la foto e ingresalo manualmente.', 'error');
+      if (result.amount === null) toast('Relectura lista. Compará las cifras con la foto e ingresá el importe correcto.');
     } catch (err) {
       toast(err.message, 'error');
     } finally { setAmountBusy(false); }

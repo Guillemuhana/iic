@@ -11,13 +11,19 @@ La coincidencia de dos respuestas del mismo modelo no demuestra que sean correct
 - Detección local de papel claro, encuadre completo y estabilidad durante 1,5 segundos.
   Es una heurística: necesita contraste con el fondo, puede rechazar documentos
   superpuestos y no corrige perspectiva. El botón manual sigue disponible.
-- Se envían el original y una versión con contraste, conservando las coordenadas.
+- La lectura general usa el original. El contraste se reserva para verificar el
+  importe; enviar ambas imágenes en la lectura general agotó el cupo gratuito
+  en la prueba real, sin resolver el error manuscrito.
 - El importe se verifica sin informar al verificador el resultado anterior.
 - Las relecturas ampliadas comparan ambas transcripciones literales y el tipo de campo.
   El resultado a la derecha de `=` se conserva; un ticket adjunto no reemplaza el
   importe del recibo. Si las lecturas discrepan, no se completa el total.
+- Se respeta `Retry-After` una vez si la espera entra en el tiempo disponible de
+  la función. Si el cupo sigue agotado, se informa la espera y no se adivina el importe.
 - En revisión, se puede seleccionar solo la línea del importe para repetir la lectura.
   La foto completa permanece disponible y las zonas de privacidad no se modifican.
+  Los resultados de ese recorte son sugerencias para revisión, no sobrescriben
+  automáticamente el importe: dos respuestas del mismo motor pueden fallar igual.
 - Guardar exige confirmar el importe con la foto. Las fotos originales no se guardan
   en Storage; se envían a Groq para lectura y se guardan versiones tapadas.
 
@@ -65,3 +71,14 @@ El recibo facilitado, girado a posición legible, tiene total **163934**.
 En la prueba real anterior a esta revisión, Groq propuso **163984** y la comprobación
 no pudo leer el importe. Resultado presentado: `null`, revisión requerida (5,8 s).
 Las pruebas unitarias usan respuestas simuladas y no prueban precisión OCR real.
+
+## Resultado real después de probar las alternativas de imagen
+
+- Original + contraste en lectura general: candidato **163984**; comprobación
+  bloqueada por cuota (429), importe presentado `null`.
+- Recorte de la línea, en color y en gris: **163984** en ambas respuestas, incorrecto.
+  La coincidencia dio un falso positivo. Por ese resultado se cambió la relectura
+  de recortes para exigir ingreso/revisión humana, sin completar el total.
+- No se ha demostrado precisión suficiente para automatizar importes manuscritos
+  con este motor. El siguiente paso es comparar otro motor con un lote real,
+  usando el mismo benchmark y sin informar respuestas conocidas al modelo.
