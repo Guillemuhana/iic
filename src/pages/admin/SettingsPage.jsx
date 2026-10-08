@@ -1,3 +1,4 @@
+import { WEEKDAYS, scheduleConfig, scheduleError, nextWeeklySend } from '../../../shared/report-schedule.js';
 import { useEffect, useState } from 'react';
 import { Save } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -15,7 +16,7 @@ export default function SettingsPage() {
       setS({
         instituto: m.instituto || { nombre: '', responsable: '' },
         contadora: { nombre: '', ...(m.contadora || {}), email: m.contadora?.email || 'estudiocaballerosalva@gmail.com', ccText: (m.contadora?.cc || []).join(', ') },
-        envio_automatico: m.envio_automatico || { activo: true },
+        envio_automatico: scheduleConfig(m.envio_automatico),
         estudiosText: (m.estudios?.lista || []).join('\n'),
       });
     });
@@ -24,9 +25,11 @@ export default function SettingsPage() {
   const save = async () => {
     const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
     const cc = s.contadora.ccText.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
-    if (s.contadora.email && !emailRe.test(s.contadora.email)) return toast('El email de la contadora no es válido.', 'error');
+    if (!emailRe.test(s.contadora.email.trim())) return toast('El email de la contadora no es válido.', 'error');
     const bad = cc.find((x) => !emailRe.test(x));
     if (bad) return toast(`El email en copia "${bad}" no es válido.`, 'error');
+    const invalidSchedule = scheduleError(s.envio_automatico);
+    if (invalidSchedule) return toast(invalidSchedule, 'error');
     setBusy(true);
     const { ccText, ...contadora } = s.contadora;
     const rows = [
@@ -60,10 +63,16 @@ export default function SettingsPage() {
           <label className="mt-5 flex items-start gap-3">
             <input type="checkbox" className="mt-1 size-4 accent-[#123A5A]" checked={s.envio_automatico.activo !== false} onChange={up('envio_automatico', 'activo')} />
             <span>
-              <span className="font-medium">Envío semanal los viernes a las 12:00</span>
-              <span className="block text-sm text-slate">Un reporte desde el viernes anterior a las 12:00 hasta este viernes a las 12:00, con resumen, totales, Excel, CSV y fotos. Incluye pendientes anteriores. Destildalo solo para pausar los envíos.</span>
+              <span className="font-medium">Activar envío semanal automático</span>
+              <span className="block text-sm text-slate">Un reporte de la semana hasta el día y horario elegidos, con resumen, totales, Excel, CSV y fotos. Incluye pendientes anteriores. Destildalo solo para pausar los envíos.</span>
             </span>
           </label>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <Field label="Día de envío"><select className="field" value={s.envio_automatico.dia} onChange={up('envio_automatico', 'dia')}>{WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}</select></Field>
+            <Field label="Hora de Argentina"><select className="field" value={s.envio_automatico.hora} onChange={up('envio_automatico', 'hora')}>{Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + ':00').map(h => <option key={h}>{h}</option>)}</select></Field>
+            <Field label="Fecha de inicio" hint="Opcional. No se enviará antes de esta fecha."><input type="date" className="field" value={s.envio_automatico.fecha_inicio} onChange={up('envio_automatico', 'fecha_inicio')} /></Field>
+          </div>
+          <p className="mt-4 text-sm text-slate">Próximo envío con estos ajustes: {nextWeeklySend(new Date(), s.envio_automatico)}. En el plan gratuito puede ejecutarse dentro de esa hora. Guardá los cambios para aplicarlos.</p>
         </Card>
         <Card className="p-6">
           <h2 className="font-bold">Estudios activos</h2>

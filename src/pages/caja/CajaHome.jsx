@@ -16,6 +16,7 @@ export default function CajaHome() {
   const [tickets, setTickets] = useState(null);
   const [pending, setPending] = useState({ count: 0, total: 0, review: 0 });
   const [autoOn, setAutoOn] = useState(true);
+  const [schedule, setSchedule] = useState({});
   const [open, setOpen] = useState(null);
 
   const load = useCallback(async () => {
@@ -30,6 +31,7 @@ export default function CajaHome() {
     const eligible = (pend || []).filter(t => !savedReimbursementError(t));
     setPending({ count: eligible.length, total: eligible.reduce((a, t) => a + Number(t.total), 0), review: (pend || []).length - eligible.length });
     setAutoOn(cfg?.value?.activo !== false);
+    setSchedule(cfg?.value || {});
   }, [day]);
 
   useEffect(() => { load(); }, [load]);
@@ -38,7 +40,7 @@ export default function CajaHome() {
   const totalDia = visibles.filter(t => !savedReimbursementError(t)).reduce((a, t) => a + Number(t.total), 0);
   const mios = visibles.filter((t) => t.created_by === profile?.id).length;
   const isToday = day === todayISO();
-  const nextSend = nextWeeklySend();
+  const nextSend = nextWeeklySend(new Date(), schedule);
 
   return (
     <div className="min-h-full bg-paper pb-32">

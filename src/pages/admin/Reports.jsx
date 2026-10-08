@@ -7,7 +7,7 @@ import { Button, Card, Empty, Spinner, Badge, Field, useToast, cx } from '../../
 import { PageHead } from './AdminLayout';
 import { money, dateAR, dateTimeAR, todayISO, startOfMonth, nextWeeklySend } from '../../lib/format';
 
-const KIND = { automatico: 'Semanal viernes 12 h', reenvio: 'Reenvío', manual: 'Manual', cierre: 'Cierre de caja' };
+const KIND = { automatico: 'Automático semanal', reenvio: 'Reenvío', manual: 'Manual', cierre: 'Cierre de caja' };
 
 export default function Reports() {
   const toast = useToast();
@@ -15,6 +15,7 @@ export default function Reports() {
   const [pending, setPending] = useState({ count: 0, total: 0 });
   const [contadora, setContadora] = useState(null);
   const [autoOn, setAutoOn] = useState(true);
+  const [schedule, setSchedule] = useState({});
   const [busy, setBusy] = useState(false);
   const [showResend, setShowResend] = useState(false);
   const [range, setRange] = useState({ from: startOfMonth(todayISO()), to: todayISO() });
@@ -30,6 +31,7 @@ export default function Reports() {
     const m = Object.fromEntries((s.data || []).map((x) => [x.key, x.value]));
     setContadora({ ...(m.contadora || {}), email: m.contadora?.email || 'estudiocaballerosalva@gmail.com' });
     setAutoOn(m.envio_automatico?.activo !== false);
+    setSchedule(m.envio_automatico || {});
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -42,14 +44,15 @@ export default function Reports() {
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   };
 
-  const nextSend = nextWeeklySend();
+  const nextSend = nextWeeklySend(new Date(), schedule);
   const lastError = reports?.find((r) => r.trigger_kind === 'automatico')?.status === 'error';
 
   return (
     <div className="mx-auto max-w-6xl">
       <PageHead title="Envíos a la contadora"
-        text="La secretaría solo escanea. Los viernes a las 12:00 el sistema le manda a la contadora un reporte de lo cargado durante la semana, la planilla Excel y las fotos con los datos tapados." />
+        text="La secretaría solo escanea. Según el horario configurado, el sistema le manda a la contadora un reporte de lo cargado durante la semana, la planilla Excel y las fotos con los datos tapados." />
 
+      <p className="mb-4 text-sm"><Link to="/panel/configuracion" className="font-semibold text-petrol-3 underline">Cambiar destinatario, día y hora de envío</Link></p>
       <Card className="overflow-hidden">
         <div className="grid gap-0 md:grid-cols-[1.3fr_1fr]">
           <div className="p-6 sm:p-7">

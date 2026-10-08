@@ -28,7 +28,7 @@ export function todayCordoba() {
 export async function sendAccountantReport({ mode = 'pendientes', from, to, sentBy = null, kind = 'manual', ticketIds, day, weekly } = {}) {
   const sb = supabaseAdmin();
   const contadora = { ...((await getSetting('contadora')) || {}) };
-  contadora.email = process.env.ACCOUNTANT_EMAIL || contadora.email || 'estudiocaballerosalva@gmail.com';
+  contadora.email = contadora.email || process.env.ACCOUNTANT_EMAIL || 'estudiocaballerosalva@gmail.com';
   const instituto = (await getSetting('instituto')) || {};
   const recipients = [contadora.email, ...(contadora.cc || [])].map((e) => String(e || '').trim()).filter(Boolean);
   if (!recipients.length) throw new HttpError(400, 'Configurá el email de la contadora en Configuración antes de enviar.');
@@ -339,7 +339,7 @@ export function buildEmailHtml({ tickets, total, periodo, nombreInst, contadora,
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr style="font-size:12px;color:#62666D;text-align:left"><th>Estudio</th><th>Visita</th><th>Paciente</th><th style="text-align:right">Importe</th></tr>${preview}</table>
       ${tickets.length > 30 ? `<p style="color:#5B6E75;font-size:12px;margin:10px 0 0">Y ${tickets.length - 30} recibos más en la planilla adjunta.</p>` : ''}
     </td></tr>
-    <tr><td style="padding:22px 30px;color:#7A8C94;font-size:11.5px;line-height:1.5">${weekly ? 'Cierre semanal: desde el viernes anterior a las 12:00 hasta este viernes a las 12:00 (Argentina). Incluye pendientes anteriores si los hay.' : 'Reporte solicitado por administración.'} Los enlaces a las fotos vencen a los 30 días. Sistema de comprobantes del ${escapeHtml(nombreInst)}. Por privacidad, el paciente figura solo con iniciales y número.</td></tr>
+    <tr><td style="padding:22px 30px;color:#7A8C94;font-size:11.5px;line-height:1.5">${weekly ? 'Cierre semanal seg?n el d?a y horario configurados por administraci?n (Argentina). Incluye pendientes anteriores si los hay.' : 'Reporte solicitado por administración.'} Los enlaces a las fotos vencen a los 30 días. Sistema de comprobantes del ${escapeHtml(nombreInst)}. Por privacidad, el paciente figura solo con iniciales y número.</td></tr>
   </table></td></tr></table></body></html>`;
 }
 
@@ -348,8 +348,8 @@ function escapeHtml(s) {
 }
 
 /** One consolidated weekly report, including overdue unsent receipts. */
-export async function sendWeeklyReport(now = new Date()) {
-  const weekly = weeklyWindow(now);
+export async function sendWeeklyReport(now = new Date(), cfg = {}) {
+  const weekly = weeklyWindow(now, cfg);
   const sb = supabaseAdmin();
   const { data: previous, error } = await sb.from('email_reports').select('id')
     .eq('trigger_kind', 'automatico').eq('period_from', weekly.from).eq('period_to', weekly.to)
