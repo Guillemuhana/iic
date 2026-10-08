@@ -2,6 +2,8 @@
 
 import { HttpError } from './supabase.js';
 import { verifyAmount } from '../../shared/amount-verification.js';
+import { prepareAmountImage } from './amount-image.js';
+import { parseAmount } from '../../shared/ticket-rules.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -14,6 +16,7 @@ Devolvé SOLO un objeto JSON con estas claves (null si no aparece; nunca invente
   "texto_leido": "transcripción literal del texto visible, impreso y manuscrito; [FIRMA] en lugar de firmas",
   "tipo_documento": "recibo_viatico | comprobante_gasto | comprobante_transferencia | otro  (el documento principal de la foto)",
   "rotacion": 0 | 90 | 180 | 270,   // grados en sentido horario para que el texto quede derecho
+  "importe_bbox": [x1,y1,x2,y2], // rectángulo de TODA la línea "Recibí la suma de", con etiqueta, cifras y =; para transferencia incluye etiqueta y monto. Coordenadas 0–1000 de la imagen ORIGINAL SIN GIRAR. null si no se ubica.
   "recibo": {                        // solo si aparece el recibo de reintegro de viáticos
     "estudio": "código escrito en 'correspondiente al estudio', ej I8F-MC-GPLL",
     "visita": "lo escrito después de 'reintegro de viáticos', ej V19",
@@ -138,17 +141,38 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
   let amountReview = null;
   if (data.recibo || data.transferencia) {
     try {
+      let amountImage = { url: originalImage, focused: false };
+      try { amountImage = await prepareAmountImage(originalImage, data.importe_bbox, data.rotacion); } catch { /* Invalid crop: use original. */ }
+      const amountPrompt = `Leé exclusivamente el campo de importe en esta imagen. Está ampliado; mirá cada dígito sin inventar. El símbolo $ no es 4. Si hay =, el total es la cifra de la derecha, sin sumar ambos lados. Un ticket de gasto no es un recibo de viáticos. Devolvé los importes como TEXTO, conservando punto de miles y coma decimal: no los conviertas a números JSON. Si no se ve la etiqueta o los dígitos son ambiguos, monto_texto=null y confianza menor a 0.5. Respondé JSON: {"campo":"recibo|transferencia|otro", "monto_texto":"cifra final literal sin símbolo $ o null", "literal":"solo la expresión completa del importe sin datos personales", "confianza": número entre 0 y 1}.`;
+      const checkImage = async (url) => {
       const output = await callGroq({ model, temperature: 0, max_completion_tokens: 768,
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: [
-          { type: 'text', text: `Verificá SOLO el monto principal de esta imagen, sin inventar dígitos. Orientá mentalmente el papel y mirá cada dígito de la línea manuscrita. El símbolo $ no es un dígito 4: no lo agregues al monto. En un recibo de viáticos leé el campo "Recibí la suma de": si hay un resultado explícito después de =, usá ese resultado, no sumes cifras ni uses el ticket adjunto. En una transferencia leé el monto transferido, no saldo ni comisión. Separador argentino: punto miles, coma decimales. Si hay tachaduras o dígitos ambiguos, monto=null y confianza menor a 0.5. Respondé únicamente JSON: {"monto": número o null, "literal": "solo la expresión del importe sin datos personales", "confianza": número entre 0 y 1}.` },
-          { type: 'image_url', image_url: { url: originalImage } },
+          { type: 'text', text: amountPrompt },
+          { type: 'image_url', image_url: { url } },
         ] }],
       }, { retries: 0, deadline });
-      const check = parseJsonLoose(output);
-      amountReview = verifyAmount(data.recibo?.total ?? data.transferencia?.monto, check.monto,
+      return parseJsonLoose(output);
+      };
+      const check = await checkImage(amountImage.url);
+      const candidate = check.monto_texto ?? check.monto;
+      const expectedField = data.recibo ? 'recibo' : 'transferencia';
+      amountReview = verifyAmount(data.recibo?.total ?? data.transferencia?.monto, candidate,
         data.recibo?.monto_detalle, check.confianza);
-      amountReview.status = check.monto == null ? 'unreadable' : 'checked';
+      amountReview.status = candidate == null ? 'unreadable' : 'checked';
+      if (check.campo && check.campo !== expectedField) amountReview.confirmed = false;
+      if (!amountReview.confirmed && amountImage.focused && candidate != null && check.campo === expectedField) {
+        const contrast = await prepareAmountImage(originalImage, data.importe_bbox, data.rotacion, true);
+        const other = await checkImage(contrast.url);
+        const agreement = verifyAmount(candidate, other.monto_texto, check.literal, Math.min(Number(check.confianza) || 0, Number(other.confianza) || 0));
+        if (agreement.confirmed && other.campo === expectedField && typeof check.literal === 'string' && check.literal.length < 160) {
+          // Two focused views must agree, including the literal amount expression.
+          amountReview = { ...agreement, extracted: amountReview.extracted, checked: parseAmount(candidate), corrected: true, status: 'focused',
+            message: 'El importe se releyó en dos imágenes ampliadas. Comparalo con la foto antes de guardar.' };
+          if (data.recibo) { data.recibo.total = agreement.checked; data.recibo.monto_detalle = check.literal; }
+          else data.transferencia.monto = agreement.checked;
+        }
+      }
     } catch (err) {
       amountReview = verifyAmount(data.recibo?.total ?? data.transferencia?.monto, null, data.recibo?.monto_detalle);
       amountReview.status = 'unavailable';
