@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { instituteClock } from '../../../shared/institute-clock.js';
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { BarChart3, Receipt, Send, Users, Settings, Camera, LogOut } from 'lucide-react';
+import { BarChart3, Receipt, Send, Users, Settings, Camera, LogOut, CalendarDays } from 'lucide-react';
 import { Logo, InstituteMark, cx } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 
 const NAV = [
   { to: '/panel', end: true, label: 'Estadísticas', icon: BarChart3 },
+  { to: '/panel/turnos', label: 'Turnos', icon: CalendarDays },
   { to: '/panel/comprobantes', label: 'Recibos', icon: Receipt },
   { to: '/panel/envios', label: 'Envíos a contadora', icon: Send },
   { to: '/panel/usuarios', label: 'Usuarios', icon: Users },
