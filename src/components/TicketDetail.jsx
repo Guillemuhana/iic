@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { signedImageUrl } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { dateTimeAR, money } from '../lib/format';
+import { savedReimbursementError } from '../../shared/save-validation.js';
 
 const EDITABLE = [
   'estudio', 'visita', 'paciente_iniciales', 'paciente_numero', 'fecha_comprobante', 'monto_detalle', 'total',
@@ -78,6 +79,7 @@ export default function TicketDetail({ ticket, onClose, onChanged }) {
 
   return (
     <Modal open={!!ticket} onClose={onClose} wide title={ticketTitle(ticket)} footer={footer}>
+      {ticket.status !== 'anulado' && savedReimbursementError(ticket) && <p role="alert" className="mb-4 rounded-xl bg-iodine-soft p-4 text-sm text-iodine">Pendiente de revisión. Se excluye del reporte: {savedReimbursementError(ticket)}</p>}
       <div className="mb-5 flex flex-wrap items-center gap-2 text-sm text-slate">
         <StatusBadge status={ticket.status} />
         <span>Cargado {dateTimeAR(ticket.created_at)}{ticket.profiles?.full_name ? ` por ${ticket.profiles.full_name}` : ''}</span>

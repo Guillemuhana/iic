@@ -108,6 +108,28 @@ node scripts/benchmark-browser.mjs 'recibo.jpg' 163934 'transferencia.jpg'
 
 Documentación de OCR local: https://github.com/naptha/tesseract.js/blob/master/docs/api.md
 
+## Corrección del caso de carga incompleta
+
+La revisión de un registro real de prueba mostró dos fotos, $152,34 guardados
+frente a 152034 en la extracción, número de paciente ausente y tapado/orientación
+sin confirmar. No se modifica su evidencia ni se adivinan datos faltantes.
+
+- La carga usa pesos y centavos separados, con entrada de solo dígitos.
+- Requiere estudio, visita, iniciales, número de paciente, fecha y operación.
+- Cada foto se gira físicamente junto con sus coordenadas de tapado. La persona
+  revisa la copia tapada y puede girarla/corregir cajas antes de confirmar.
+- `/api/save-ticket` vuelve a validar ambos documentos, escala de importes,
+  revisión de fotos y propiedad de las rutas de almacenamiento.
+- Marcadores explícitos de simulación/datos ficticios impiden la carga real.
+- Los reportes excluyen los registros incompletos o sin revisión de fotos;
+  el inicio y el detalle indican que necesitan revisión. Esto afecta también a
+  registros históricos sin los controles nuevos: deben revisarse y reescanearse.
+- Pasaron 34 pruebas automatizadas, incluida la API aislada, y una prueba móvil
+  de 320 píxeles con escaneo y guardados simulados que reproduce los errores.
+
+Estos controles reducen fallos observados; no garantizan que Groq lea toda letra
+manuscrita correctamente. La revisión de las imágenes sigue siendo obligatoria.
+
 ## Medición reproducible
 
 `scripts/benchmark-scan.mjs` recibe una foto, el importe correcto conocido y una

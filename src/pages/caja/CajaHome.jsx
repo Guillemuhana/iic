@@ -7,13 +7,14 @@ import { Button, Card, Empty, InstituteMark, Spinner, StatusBadge, cx } from '..
 import TicketDetail from '../../components/TicketDetail';
 import logoMonoWhite from '../../assets/logo-iic-mono-blanco.png';
 import { money, timeAR, todayISO, dateAR, addDays, longDayAR, nextWeeklySend } from '../../lib/format';
+import { savedReimbursementError } from '../../../shared/save-validation.js';
 
 export default function CajaHome() {
   const { profile, signOut, isAdmin } = useAuth();
   const nav = useNavigate();
   const [day, setDay] = useState(todayISO());
   const [tickets, setTickets] = useState(null);
-  const [pending, setPending] = useState({ count: 0, total: 0 });
+  const [pending, setPending] = useState({ count: 0, total: 0, review: 0 });
   const [autoOn, setAutoOn] = useState(true);
   const [open, setOpen] = useState(null);
 
@@ -22,18 +23,19 @@ export default function CajaHome() {
     const end = new Date(addDays(day, 1) + 'T00:00:00-03:00').toISOString();
     const [{ data }, { data: pend }, { data: cfg }] = await Promise.all([
       supabase.from('tickets').select('*, profiles:created_by(full_name)').gte('created_at', start).lt('created_at', end).order('created_at', { ascending: false }),
-      supabase.from('tickets').select('total').eq('status', 'cargado'),
+      supabase.from('tickets').select('*').eq('status', 'cargado'),
       supabase.from('settings').select('value').eq('key', 'envio_automatico').maybeSingle(),
     ]);
     setTickets(data || []);
-    setPending({ count: pend?.length || 0, total: (pend || []).reduce((a, t) => a + Number(t.total), 0) });
+    const eligible = (pend || []).filter(t => !savedReimbursementError(t));
+    setPending({ count: eligible.length, total: eligible.reduce((a, t) => a + Number(t.total), 0), review: (pend || []).length - eligible.length });
     setAutoOn(cfg?.value?.activo !== false);
   }, [day]);
 
   useEffect(() => { load(); }, [load]);
 
   const visibles = useMemo(() => (tickets || []).filter((t) => t.status !== 'anulado'), [tickets]);
-  const totalDia = visibles.reduce((a, t) => a + Number(t.total), 0);
+  const totalDia = visibles.filter(t => !savedReimbursementError(t)).reduce((a, t) => a + Number(t.total), 0);
   const mios = visibles.filter((t) => t.created_by === profile?.id).length;
   const isToday = day === todayISO();
   const nextSend = nextWeeklySend();
@@ -73,6 +75,7 @@ export default function CajaHome() {
           </span>
           <div className="min-w-0 text-[14px] leading-snug">
             <p className="font-semibold">Envío automático a la contadora</p>
+            {pending.review > 0 && <p className="mt-1 rounded-lg bg-iodine-soft p-2 text-iodine">{pending.review} reintegro(s) necesitan revisión. Se excluyen del reporte y del total.</p>}
             {!autoOn ? (
               <p className="mt-0.5 text-slate">El envío automático está pausado. Avisale al administrador.</p>
             ) : pending.count ? (
@@ -80,7 +83,7 @@ export default function CajaHome() {
                 Se envían solos {nextSend}: <b className="text-ink tabular-nums">{pending.count} recibo{pending.count === 1 ? '' : 's'}</b> por <b className="text-ink tabular-nums">{money(pending.total)}</b>.
               </p>
             ) : (
-              <p className="mt-0.5 text-slate">Está todo enviado. Lo que cargues ahora sale {nextSend}.</p>
+              <p className="mt-0.5 text-slate">{pending.review ? 'No hay reintegros listos para enviar.' : 'Está todo enviado.'} Lo que cargues y revises sale {nextSend}.</p>
             )}
           </div>
         </Card>
@@ -109,7 +112,7 @@ export default function CajaHome() {
                 </div>
                 <div className="shrink-0 text-right">
                   <p className={cx('font-bold tabular-nums', t.status === 'anulado' && 'text-slate line-through')}>{money(t.total, { decimals: 0 })}</p>
-                  <div className="mt-1"><StatusBadge status={t.status} short /></div>
+                  <div className="mt-1">{t.status !== 'anulado' && savedReimbursementError(t) ? <span className="text-xs font-semibold text-iodine">Revisar · no se envía</span> : <StatusBadge status={t.status} short />}</div>
                 </div>
                 <ChevronRight className="size-4 shrink-0 text-slate/60" />
               </button>

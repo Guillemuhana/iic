@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import { weeklyWindow } from '../../shared/report-schedule.js';
 import nodemailer from 'nodemailer';
 import { supabaseAdmin, getSetting, HttpError } from './supabase.js';
+import { savedReimbursementError } from '../../shared/save-validation.js';
 
 const TZ = 'America/Argentina/Cordoba';
 
@@ -45,17 +46,19 @@ export async function sendAccountantReport({ mode = 'pendientes', from, to, sent
   if (to) q = q.lte('fecha_comprobante', to);
 
   // Fetch every row: Supabase defaults to 1000 per request.
-  const tickets = [];
+  const candidates = [];
   q = q.order('id', { ascending: true });
   for (let offset = 0; ; offset += 1000) {
     const { data, error } = await q.range(offset, offset + 999);
     if (error) throw new HttpError(500, error.message);
-    tickets.push(...data);
+    candidates.push(...data);
     if (data.length < 1000) break;
   }
+  const tickets = candidates.filter(t => !savedReimbursementError(t));
+  const excluded = candidates.length - tickets.length;
   tickets.sort((a, b) => (a.estudio || '').localeCompare(b.estudio || '', 'es')
     || (a.created_at || '').localeCompare(b.created_at || '') || a.id.localeCompare(b.id));
-  if (!tickets.length) return { sent: false, reason: 'No hay tickets para enviar en ese criterio.', count: 0 };
+  if (!tickets.length) return { sent: false, reason: excluded ? `${excluded} reintegro(s) requieren revisión y no se enviaron.` : 'No hay tickets para enviar en ese criterio.', count: 0, excluded };
 
   const total = tickets.reduce((a, t) => a + Math.round(Number(t.total || 0) * 100), 0) / 100;
   const dates = tickets.map((t) => t.fecha_comprobante).filter(Boolean).sort();
@@ -120,7 +123,7 @@ export async function sendAccountantReport({ mode = 'pendientes', from, to, sent
     if (error) throw new HttpError(500, 'El email se envió pero no se pudo actualizar el estado de los recibos: ' + error.message);
   }
 
-  return { sent: true, count: tickets.length, total, reportId: report.id, recipients };
+  return { sent: true, count: tickets.length, total, reportId: report.id, recipients, excluded };
 }
 
 function mailer() {

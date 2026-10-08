@@ -4,6 +4,7 @@ import { HttpError } from './supabase.js';
 import { verifyAmount, verifyVisualReadings } from '../../shared/amount-verification.js';
 import { prepareAmountImage } from './amount-image.js';
 import { parseAmount } from '../../shared/ticket-rules.js';
+import { isTestDocument } from '../../shared/save-validation.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -179,6 +180,7 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
   if (!data) throw new HttpError(502, lastError?.message || 'No se pudo interpretar el ticket.');
   const ocr = cleanModelText(data.texto_leido || '');
   if (ocr.length < 8) throw new HttpError(422, 'No se detectó texto suficiente. Repetí la foto más cerca del papel.');
+  if (isTestDocument(ocr)) throw new HttpError(422, 'La foto es una simulación con datos ficticios. No se puede registrar como un reintegro real.');
   let amountReview = null;
   if (data.recibo || data.transferencia) {
     try {

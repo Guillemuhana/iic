@@ -1,6 +1,7 @@
 import { handler, requireUser, HttpError, supabaseAdmin, getSetting } from './_lib/supabase.js';
 import { readTicket } from './_lib/groq.js';
 import { normalizeDocument, maskPersonalText } from '../shared/ticket-rules.js';
+import { isTestDocument } from '../shared/save-validation.js';
 
 export const config = { maxDuration: 60 };
 
@@ -25,6 +26,7 @@ export default handler(['POST'], async (req) => {
 
   const started = Date.now();
   const { data, ocr, model, amountReview } = await readTicket(image, { estudios, originalImage, amountRegion: body.amountRegion });
+  if (isTestDocument(ocr)) throw new HttpError(422, 'La foto dice que es una simulación o tiene datos ficticios. No se puede cargar como un reintegro real.');
   const doc = normalizeDocument(data, { estudios });
   // Never prefill a financial total that the independent reading could not verify.
   // Both raw candidates remain in amountReview for the person to compare.

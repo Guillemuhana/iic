@@ -2,6 +2,7 @@
 // Reads through the real API unless IIC_SCAN_SIMULATED=1. Save requests are always simulated, never persisted.
 import { chromium } from 'playwright';
 import { readFile } from 'node:fs/promises';
+import { savedReimbursementError } from '../shared/save-validation.js';
 const [file, expectedText, transferFile] = process.argv.slice(2);
 if (!file || !expectedText || !transferFile || !process.env.IIC_SCAN_PASSWORD) throw new Error('Provide receipt photo, expected total, transfer photo and IIC_SCAN_PASSWORD.');
 const env = Object.fromEntries((await readFile('.env.local', 'utf8')).split(/\r?\n/).filter(line => /^\w+=/.test(line)).map(line => { const i = line.indexOf('='); return [line.slice(0, i), line.slice(i + 1).replace(/^"|"$/g, '')]; }));
@@ -21,12 +22,23 @@ try {
     if (scanRequests === 1) return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: 'Prueba: límite temporal. Reintentá la lectura.' }) });
     const transfer = scanRequests >= 4;
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-    doc: { tipo: transfer ? 'comprobante_transferencia' : 'recibo_viatico', rotacion: 0, recibo: transfer ? null : { estudio: 'PRUEBA', visita: 'V19', paciente_iniciales: 'FA', paciente_numero: '1023', total: Number(expectedText), fecha_comprobante: '2026-10-06' }, gastos: [], transferencia: transfer ? { monto: Number(expectedText) + 50, fecha: '2026-10-06', nro_operacion: '182687103836', plataforma: 'Mercado Pago' } : null, datos_personales: [{ tipo: 'firma', box: { x: .1, y: .8, w: .1, h: .05 } }] },
-    raw_text: '', confidence: .95, fieldConfidence: {}, amountReview: { confirmed: true, message: 'Lectura simulada para probar el flujo.' }, model: 'simulated', ms: 1,
+    doc: { tipo: transfer ? 'comprobante_transferencia' : 'recibo_viatico', rotacion: 0, recibo: transfer ? null : { estudio: 'PRUEBA', visita: 'V19', paciente_iniciales: 'FA', paciente_numero: simulatedScan ? null : '1023', total: Number(expectedText), fecha_comprobante: '2026-10-06' }, gastos: [], transferencia: transfer ? { monto: Number(expectedText) + 50, fecha: '2026-10-06', nro_operacion: '182687103836', plataforma: 'Mercado Pago' } : null, datos_personales: [{ tipo: 'firma', box: { x: .1, y: .8, w: .1, h: .05 } }] },
+    raw_text: '', confidence: .95, fieldConfidence: {}, amountReview: { confirmed: true, extracted: Number(expectedText), checked: Number(expectedText), message: 'Lectura simulada para probar el flujo.' }, model: 'simulated', ms: 1,
   }) }); });
   const writes = [];
   let failSave = true;
   let savedPayload;
+  await page.route('**/api/save-ticket', route => {
+    savedPayload = route.request().postDataJSON();
+    const validation = savedReimbursementError(savedPayload);
+    if (validation) return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: validation }) });
+    writes.push('save-ticket (simulated)');
+    if (failSave) {
+      failSave = false;
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Prueba: guardado no disponible' }) });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...savedPayload, id: crypto.randomUUID() }) });
+  });
   await page.route('**/storage/v1/**', route => {
     if (route.request().method() === 'POST') {
       writes.push('Storage (simulated)');
@@ -78,7 +90,7 @@ try {
   const sent = response.request().postDataJSON();
   const amount = result.doc?.recibo?.total ?? null;
   const save = page.getByRole('button', { name: 'Confirmar y guardar', exact: true });
-  await page.getByAltText('Foto del recibo para corroborar los datos').waitFor();
+  await page.getByAltText('Foto del comprobante', { exact: true }).waitFor();
   await page.getByLabel(/^Iniciales del paciente/).fill('ZZ');
   if (await save.count()) throw new Error('Single-document reimbursement can be saved.');
   await page.getByRole('button', { name: 'Escanear transferencia · 2 de 2', exact: true }).click();
@@ -96,10 +108,34 @@ try {
   await save.waitFor();
   if (simulatedScan) {
     await save.click();
+    await page.getByText('Falta el n.º de paciente (va junto a las iniciales).', { exact: true }).first().waitFor();
+    if (writes.length) throw new Error('Incomplete patient was saved.');
+    await page.getByLabel(/^N.º de paciente/).fill('1023');
+    await save.click();
     await page.getByRole('alert').filter({ hasText: 'importes diferentes' }).waitFor();
     if (writes.length) throw new Error('Mismatched amounts were saved.');
-    await page.getByLabel(/^Total transferido/).fill(String(amount));
-    await page.getByLabel(/^Total transferido/).blur();
+    await page.getByRole('textbox', { name: 'Total transferido en pesos', exact: true }).fill(String(amount));
+    await page.getByRole('textbox', { name: 'Total transferido en pesos', exact: true }).blur();
+  }
+  await save.click();
+  await page.getByText('Revisá cada foto: debe estar derecha, con firma y datos personales tapados e importe visible.', { exact: true }).waitFor();
+  if (writes.length) throw new Error('Photos were saved before privacy review.');
+  const reviewPhoto = () => page.getByRole('checkbox', { name: /^Revisé esta foto:/ });
+  await reviewPhoto().check();
+  await page.getByRole('button', { name: 'Ver Recibo de viáticos', exact: true }).click();
+  await reviewPhoto().check();
+  if (simulatedScan) {
+    for (const label of ['Total recibido', 'Total transferido']) {
+      await page.getByRole('textbox', { name: `${label} en pesos`, exact: true }).fill('152');
+      await page.getByRole('textbox', { name: `${label} en centavos`, exact: true }).fill('34');
+    }
+    await save.click();
+    await page.getByText('El importe ingresado es mucho menor que el leído.', { exact: false }).waitFor();
+    if (writes.length) throw new Error('Same wrong scale in both amounts bypassed save checks.');
+    for (const label of ['Total recibido', 'Total transferido']) {
+      await page.getByRole('textbox', { name: `${label} en pesos`, exact: true }).fill(String(amount));
+      await page.getByRole('textbox', { name: `${label} en centavos`, exact: true }).fill('00');
+    }
   }
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error('Review overflows the phone screen.');
   await save.click();
@@ -115,7 +151,7 @@ try {
   if (savedPayload.paciente_iniciales !== 'ZZ') throw new Error('Patient correction was lost.');
   if (savedPayload.image_paths.length !== 2 || savedPayload.extraction.fotos.length !== 2) throw new Error('Documents were not saved together.');
   if (savedPayload.pago.monto !== amount || savedPayload.nro_operacion !== '182687103836') throw new Error('Transfer fields were lost.');
-  console.log(JSON.stringify({ simulatedScan, twoDocumentsRequired: true, duplicateDocumentRejected: simulatedScan, amountMismatchBlocked: simulatedScan, photosSavedTogether: true, poorPhotoRejectedLocally: simulatedScan, readingRetryPassed: simulatedScan, patientCorrectionPreserved: true, expected: Number(expectedText), actual: amount, correct: amount === Number(expectedText), clientRegion: sent.amountRegion, review: result.amountReview, failedSavePreservedReview: true, simulatedSaveReturnedHome: true, preventedWrites: writes }, null, 2));
+  console.log(JSON.stringify({ simulatedScan, missingPatientBlocked: simulatedScan, unreviewedPhotosBlocked: true, sameWrongAmountScaleBlocked: simulatedScan, twoDocumentsRequired: true, duplicateDocumentRejected: simulatedScan, amountMismatchBlocked: simulatedScan, photosSavedTogether: true, poorPhotoRejectedLocally: simulatedScan, readingRetryPassed: simulatedScan, patientCorrectionPreserved: true, expected: Number(expectedText), actual: amount, correct: amount === Number(expectedText), clientRegion: sent.amountRegion, review: result.amountReview, failedSavePreservedReview: true, simulatedSaveReturnedHome: true, preventedWrites: writes }, null, 2));
 } finally {
   await browser?.close();
   await fetch(`${env.VITE_SUPABASE_URL}/auth/v1/logout`, { method: 'POST', headers: { apikey: env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session.access_token}` } });

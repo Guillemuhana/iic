@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Field, cx } from './ui';
 import { MEDIOS_PAGO, parseAmount, checkTicket } from '../../shared/ticket-rules.js';
 import { supabase } from '../lib/supabase';
+import MoneyInput from './MoneyInput';
 
 let estudiosCache = null;
 function useEstudios() {
@@ -30,7 +31,6 @@ export default function TicketForm({ value, onChange, fieldConfidence = {}, comp
     return null;
   };
   const set = (k) => (e) => onChange({ ...t, [k]: e?.target ? e.target.value : e });
-  const setAmount = (k) => (e) => onChange({ ...t, [k]: e.target.value === '' ? null : parseAmount(e.target.value) });
   const ctx = { t, set, flagFor };
 
   const gastos = t.comprobantes_adjuntos || [];
@@ -53,11 +53,12 @@ export default function TicketForm({ value, onChange, fieldConfidence = {}, comp
           <F {...ctx} k="paciente_numero" label="N.º de paciente" placeholder="Ej. 1023" mono upper />
         </div>
         <p className="mt-2 text-[12px] text-slate">Por privacidad no se registra el nombre del paciente: solo iniciales y número.</p>
+        <p className="mt-1 text-[12px] text-slate">Si el número no aparece en la foto, completalo con el identificador del paciente en el estudio. Es obligatorio.</p>
       </Section>
 
       <Section title="Importe recibido">
         <div className="grid gap-4 sm:grid-cols-[1.2fr_1fr]">
-          <AmountField label="Total recibido" big value={t.total} onChange={setAmount('total')} flag={flagFor('total')} />
+          <MoneyInput label="Total recibido" value={t.total} onChange={v => onChange({ ...t, total: v })} flag={flagFor('total')} />
           <F {...ctx} k="fecha_comprobante" label="Fecha" type="date" />
         </div>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -96,7 +97,7 @@ export default function TicketForm({ value, onChange, fieldConfidence = {}, comp
       }>
         {flagFor('comprobantes_adjuntos') && <p className="mb-3 rounded-lg bg-iodine-soft px-3 py-2 text-[13px] text-iodine">{flagFor('comprobantes_adjuntos').message}</p>}
         {gastos.length === 0 ? (
-          <p className="text-sm text-slate">Sin tickets de gastos. Si los adjuntó, agregá una foto de cada uno.</p>
+          <p className="text-sm text-slate">Sin gastos leídos. Si hay tickets adjuntos en la foto del recibo, revisá y completá su detalle.</p>
         ) : (
           <div className="space-y-2">
             {gastos.map((g, i) => (
@@ -159,23 +160,5 @@ function Section({ title, aside, children }) {
       </div>
       {children}
     </section>
-  );
-}
-
-function AmountField({ label, value, onChange, flag, big }) {
-  return (
-    <Field label={label} flag={flag}>
-      <div className="relative">
-        <span className={cx('pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate', big && 'text-lg')}>$</span>
-        <input
-          key={value ?? 'empty'}
-          className={cx('field pl-7 text-right tabular-nums', big && 'h-14 text-2xl font-bold')}
-          inputMode="decimal"
-          data-flag={flag?.level}
-          defaultValue={value === null || value === undefined ? '' : Number(value).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
-          onBlur={onChange}
-        />
-      </div>
-    </Field>
   );
 }

@@ -296,12 +296,14 @@ export function checkTicket(t) {
   } else if (Number(t.total) <= 0) {
     out.push({ field: 'total', level: 'error', message: 'El importe debe ser mayor que cero.' });
   }
-  if (!t.estudio) out.push({ field: 'estudio', level: 'warn', message: 'Falta el estudio.' });
-  if (!t.visita) out.push({ field: 'visita', level: 'warn', message: 'Falta la visita (ej. V19).' });
-  if (!t.paciente_iniciales) out.push({ field: 'paciente_iniciales', level: 'warn', message: 'Faltan las iniciales del paciente.' });
-  if (!t.paciente_numero) out.push({ field: 'paciente_numero', level: 'warn', message: 'Falta el n.º de paciente (va junto a las iniciales).' });
+  if (!t.estudio?.trim()) out.push({ field: 'estudio', level: 'error', message: 'Falta el estudio.' });
+  if (!t.visita?.trim()) out.push({ field: 'visita', level: 'error', message: 'Falta la visita (ej. V19).' });
+  if (!t.paciente_iniciales?.trim()) out.push({ field: 'paciente_iniciales', level: 'error', message: 'Faltan las iniciales del paciente.' });
+  if (!t.paciente_numero?.trim()) out.push({ field: 'paciente_numero', level: 'error', message: 'Falta el n.º de paciente (va junto a las iniciales).' });
   if (!t.fecha_comprobante) {
-    out.push({ field: 'fecha_comprobante', level: 'warn', message: 'Falta la fecha.' });
+    out.push({ field: 'fecha_comprobante', level: 'error', message: 'Falta la fecha.' });
+  } else if (!parseDate(t.fecha_comprobante)) {
+    out.push({ field: 'fecha_comprobante', level: 'error', message: 'La fecha del comprobante no es válida.' });
   } else {
     const d = new Date(t.fecha_comprobante + 'T12:00:00');
     if (d.getTime() > today.getTime() + 86400000) out.push({ field: 'fecha_comprobante', level: 'warn', message: 'La fecha es futura.' });

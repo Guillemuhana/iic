@@ -5,6 +5,7 @@ import Camera from '../../components/Camera';
 // Solo en la compilación de demo (en producción esta rama se elimina).
 const DemoCamera = import.meta.env.VITE_DEMO === '1' ? lazy(() => import('../../demo/DemoCamera')) : null;
 import TicketForm from '../../components/TicketForm';
+import MoneyInput from '../../components/MoneyInput';
 import RedactionEditor from '../../components/RedactionEditor';
 import DocumentCropper from '../../components/DocumentCropper';
 import { Button, Card, Modal, useToast, cx } from '../../components/ui';
@@ -14,8 +15,10 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { money, dateAR, todayISO } from '../../lib/format';
 import { locateReceipt } from '../../lib/receipt-locator';
-import { checkTicket, emptyTicket, mergeDocument, parseAmount } from '../../../shared/ticket-rules.js';
+import { checkTicket, emptyTicket, mergeDocument } from '../../../shared/ticket-rules.js';
 import { receiptPairStatus, checkReceiptPair, mergeReceiptPairDocument } from '../../../shared/receipt-pair.js';
+import { validateReimbursement } from '../../../shared/save-validation.js';
+import { rotatePhotoBox } from '../../../shared/photo-geometry.js';
 
 const READING_STEPS = ['Orientando el recibo y ubicando el importe', 'Leyendo texto impreso y manuscrito', 'Verificando cada cifra del importe', 'Ubicando firma y datos personales'];
 const DOC_LABEL = { recibo_viatico: 'Recibo de viáticos', comprobante_gasto: 'Ticket de gasto', comprobante_transferencia: 'Transferencia', otro: 'Documento' };
@@ -33,8 +36,6 @@ export default function ScanFlow() {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(0);
-  const [view, setView] = useState('datos');
-  const [askUnredacted, setAskUnredacted] = useState(false);
   const [largePhoto, setLargePhoto] = useState(false);
   const [cropping, setCropping] = useState(false);
   const [amountPhoto, setAmountPhoto] = useState(null);
@@ -90,12 +91,15 @@ export default function ScanFlow() {
       const validTransfer = r.doc.tipo === 'comprobante_transferencia' && r.doc.transferencia;
       if (!validReceipt && !validTransfer) throw new Error('Necesitamos el recibo de viáticos o la transferencia. Sacá una foto de cada documento completo.');
       if (photos.some(p => p.tipo === r.doc.tipo)) throw new Error(`Ya escaneaste este tipo de documento. Falta ${receiptPairStatus(photos).next === 'recibo_viatico' ? 'el recibo de viáticos' : 'la transferencia'} del mismo paciente.`);
+      const rotation = [90, 180, 270].includes(r.doc.rotacion) ? r.doc.rotacion : 0;
+      if (rotation) prepared = track(await prepareTicketImage(await rotateBlob(prepared.blob, rotation)));
       const photo = {
         id: crypto.randomUUID(),
         img: prepared,
         tipo: r.doc.tipo,
-        rotation: r.doc.rotacion,
-        boxes: r.doc.datos_personales.filter((d) => d.box).map((d) => ({ ...d.box, tipo: d.tipo })),
+        rotation: 0,
+        privacyConfirmed: false,
+        boxes: r.doc.datos_personales.filter((d) => d.box).map((d) => rotatePhotoBox({ ...d.box, tipo: d.tipo }, rotation)),
         raw_text: r.raw_text,
         confidence: r.confidence,
         amountReview: r.amountReview,
@@ -113,7 +117,6 @@ export default function ScanFlow() {
       }));
       setPending(null);
       setStage('review');
-      setView('datos');
     } catch (e) {
       setError(e.message);
       setStage('check');
@@ -123,7 +126,16 @@ export default function ScanFlow() {
     }
   };
 
-  const setBoxes = (i, boxes) => setPhotos((list) => list.map((p, j) => (j === i ? { ...p, boxes } : p)));
+  const setBoxes = (i, boxes) => setPhotos((list) => list.map((p, j) => (j === i ? { ...p, boxes, privacyConfirmed: false } : p)));
+  const rotatePhoto = async () => {
+    setAmountBusy(true);
+    try {
+      const target = photos[current];
+      const img = track(await prepareTicketImage(await rotateBlob(target.img.blob, 90)));
+      setPhotos(list => list.map(p => p.id === target.id ? { ...p, img, boxes: p.boxes.map(b => rotatePhotoBox(b, 90)), privacyConfirmed: false } : p));
+    } catch { toast('No se pudo girar la foto. Volvé a intentar.', 'error'); }
+    finally { setAmountBusy(false); }
+  };
   const rereadSelectedAmount = async (blob) => {
     const target = amountPhoto;
     setAmountBusy(true);
@@ -161,20 +173,18 @@ export default function ScanFlow() {
 
   const trySave = () => {
     if (saveInFlight.current || amountBusy) return;
-    const pairError = checkReceiptPair(ticket, photos);
+    const pairError = validateReimbursement(ticket, photos);
     if (pairError) { toast(pairError, 'error'); return; }
     const blocking = checkTicket(ticket).filter((w) => w.level === 'error');
     if (blocking.length) { toast(blocking[0].message, 'error'); return; }
-    if (photos.some((p) => p.boxes.length === 0)) { setAskUnredacted(true); return; }
     save();
   };
 
   const save = async () => {
     if (saveInFlight.current) return;
-    const validation = checkReceiptPair(ticket, photos) || checkTicket(ticket).find(w => w.level === 'error')?.message;
+    const validation = validateReimbursement(ticket, photos);
     if (validation) { toast(validation, 'error'); return; }
     saveInFlight.current = true;
-    setAskUnredacted(false);
     setSaving(true);
     const uploaded = [];
     try {
@@ -192,7 +202,7 @@ export default function ScanFlow() {
         datos_ocultos: photos.reduce((a, p) => a + p.boxes.length, 0),
         raw_text: photos.map((p, i) => `— Foto ${i + 1}: ${DOC_LABEL[p.tipo]} —\n${p.raw_text || ''}`).join('\n\n'),
         extraction: {
-          fotos: photos.map((p) => ({ tipo: p.tipo, confidence: p.confidence, ms: p.ms, tapas: p.boxes.length, leido: p.doc })),
+          fotos: photos.map((p) => ({ tipo: p.tipo, confidence: p.confidence, ms: p.ms, tapas: p.boxes.length, leido: p.doc, privacidad_revisada: p.privacyConfirmed, verificacion_importe: p.amountReview })),
           fieldConfidence: meta.fieldConfidence,
           importe_revisado: true,
           verificacion_importes: photos.map((p) => p.amountReview).filter(Boolean),
@@ -202,8 +212,7 @@ export default function ScanFlow() {
         confidence: Math.min(...photos.map((p) => p.confidence ?? 1)),
         model: photos[0]?.model,
       };
-      const { data, error: dbErr } = await supabase.from('tickets').insert(payload).select().single();
-      if (dbErr) throw new Error(dbErr.code === '23505' ? 'Este comprobante ya fue cargado.' : dbErr.message);
+      const data = await api('save-ticket', { body: payload });
       if (!data?.id) throw new Error('No se pudo confirmar el guardado. Volvé a intentar.');
       toast('Recibo guardado. Ya podés escanear otro.');
       nav('/caja', { replace: true });
@@ -331,11 +340,11 @@ export default function ScanFlow() {
               <p className="mt-3 text-sm text-slate">{pair.complete ? 'Revisá los datos y las dos fotos del mismo paciente. El importe se registra una sola vez.' : `Falta escanear ${nextLabel} del mismo paciente. Los datos de la primera foto se conservan.`}</p>
               {pair.complete && pairError && <p role="alert" className="mt-3 rounded-xl bg-iodine-soft p-3 text-sm text-iodine">{pairError}</p>}
             </Card>
-            <aside className="space-y-4">
+            <aside id="photo-review" className="scroll-mt-24 space-y-4">
               <div className="lg:sticky lg:top-24">
                 <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
                   {photos.map((p, i) => (
-                    <button key={p.id} onClick={() => setCurrent(i)}
+                    <button key={p.id} onClick={() => setCurrent(i)} aria-label={`Ver ${DOC_LABEL[p.tipo]}`}
                       className={cx('relative shrink-0 overflow-hidden rounded-xl border-2', i === current ? 'border-petrol' : 'border-transparent')}>
                       <img src={p.img.previewUrl} alt="" className="h-16 w-14 object-cover" />
                       <span className="absolute inset-x-0 bottom-0 bg-petrol/85 px-1 text-[9px] font-semibold text-white">{DOC_LABEL[p.tipo]}</span>
@@ -356,19 +365,24 @@ export default function ScanFlow() {
                       )}
                     </div>
                     <Button variant="outline" icon={Maximize2} className="mb-3 w-full" onClick={() => setLargePhoto(true)}>Ampliar foto para revisar el importe</Button>
-                    <img src={photo.img.previewUrl} alt="Foto del recibo para corroborar los datos" className="max-h-[45vh] w-full rounded-2xl border border-mist bg-white object-contain lg:max-h-[65vh]" />
-                    <details open={view === 'fotos' ? true : undefined} className="mt-3 rounded-xl border border-mist bg-white p-3">
+                    <Button variant="outline" icon={RotateCw} className="mb-3 w-full" disabled={amountBusy} onClick={rotatePhoto}>Girar foto</Button>
+                    <details open className="mt-3 rounded-xl border border-mist bg-white p-3">
                       <summary className="cursor-pointer text-sm font-semibold">Revisar datos tapados en la copia guardada</summary>
                       <div className="mt-3"><RedactionEditor src={photo.img.previewUrl} boxes={photo.boxes} onChange={(b) => setBoxes(current, b)} /></div>
                       <p className="mt-3 text-xs text-slate">La foto se guarda con los datos personales tapados.</p>
                     </details>
+                    <label className="mt-3 flex items-start gap-3 rounded-xl border border-mist bg-white p-4 text-sm">
+                      <input type="checkbox" className="mt-0.5 size-5 shrink-0 accent-petrol" checked={photo.privacyConfirmed}
+                        onChange={e => { const confirmed = e.target.checked; setPhotos(list => list.map(p => p.id === photo.id ? { ...p, privacyConfirmed: confirmed } : p)); }} />
+                      Revisé esta foto: es un comprobante real, está derecha, la firma y los datos personales están tapados, y el importe y el estudio se ven.
+                    </label>
                   </>
                 )}
               </div>
             </aside>
 
             <div className="min-w-0 space-y-5">
-              <ReadSummary photos={photos} warnings={warnings} meta={meta} onPhotos={() => setView('fotos')} />
+              <ReadSummary photos={photos} warnings={warnings} meta={meta} onPhotos={() => document.getElementById('photo-review')?.scrollIntoView({ behavior: 'smooth' })} />
               {meta.duplicate && (
                 <Card className="flex gap-3 border-lesion/30 bg-lesion-soft p-4 text-sm text-lesion">
                   <Copy className="mt-0.5 size-5 shrink-0" />
@@ -381,13 +395,9 @@ export default function ScanFlow() {
               <Card className="p-4 sm:p-6">
                 <p className="text-xs font-bold uppercase tracking-wide text-slate">Total del recibo</p>
                 <p className="mt-2 text-4xl font-extrabold tabular-nums text-petrol">{ticket.total != null ? money(ticket.total) : 'Sin importe legible'}</p>
-                {pair.transfer && <label className="mt-4 block text-sm font-semibold text-petrol">
-                  Total transferido
-                  <input key={ticket.pago?.monto ?? 'empty-transfer'} className="field mt-2 text-right text-xl tabular-nums" inputMode="decimal"
-                    defaultValue={ticket.pago?.monto != null ? Number(ticket.pago.monto).toLocaleString('es-AR') : ''}
-                    onBlur={e => { const monto = parseAmount(e.target.value); setTicket(value => ({ ...value, pago: { ...value.pago, monto } })); }} />
-                  <span className="mt-1 block text-xs font-normal text-slate">Comparalo con la transferencia. Ambos importes deben coincidir.</span>
-                </label>}
+                {pair.transfer && <div className="mt-4"><MoneyInput label="Total transferido" value={ticket.pago?.monto}
+                  onChange={monto => setTicket(value => ({ ...value, pago: { ...value.pago, monto } }))} />
+                  <p className="mt-2 text-sm text-slate">Ambos importes deben coincidir con las fotos.</p></div>}
                 <details className="mt-3"><summary className="cursor-pointer text-sm font-semibold">Revisar lectura del importe</summary>
                 {photos.filter((p) => p.amountReview).map((p) => (
                   <div key={p.id} className={cx('mt-3 rounded-xl p-3 text-sm', p.amountReview.confirmed ? 'bg-fog text-slate' : 'bg-iodine-soft text-iodine')}>
@@ -439,13 +449,6 @@ export default function ScanFlow() {
       <Modal open={Boolean(amountPhoto)} wide onClose={() => { if (!amountBusy) setAmountPhoto(null); }} title="Releer únicamente el importe">
         {amountPhoto && <DocumentCropper src={amountPhoto.img.previewUrl} amount onApply={rereadSelectedAmount} />}
         {amountBusy && <p role="status" className="mt-3 text-sm text-slate">Comparando dos lecturas del recorte…</p>}
-      </Modal>
-      <Modal open={askUnredacted} onClose={() => setAskUnredacted(false)} title="Hay fotos sin datos tapados"
-        footer={<>
-          <Button variant="ghost" onClick={() => { setAskUnredacted(false); setView('fotos'); setCurrent(Math.max(0, photos.findIndex((p) => !p.boxes.length))); }}>Revisar fotos</Button>
-          <Button onClick={save} loading={saving}>Guardar igual</Button>
-        </>}>
-        <p className="text-[15px]">En {photos.filter((p) => !p.boxes.length).length === 1 ? 'una foto' : 'algunas fotos'} no se tapó ningún dato. Si se ve la firma, el nombre, el CUIT o la cuenta del paciente, tapalo antes de guardar.</p>
       </Modal>
     </div>
   );
