@@ -1,3 +1,4 @@
+import { savedReimbursementError } from '../../../shared/save-validation.js';
 import { useCallback, useEffect, useState } from 'react';
 import { MailCheck, MailX, History, Clock, PauseCircle, ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -23,11 +24,12 @@ export default function Reports() {
   const load = useCallback(async () => {
     const [r, p, s] = await Promise.all([
       supabase.from('email_reports').select('*, profiles:sent_by(full_name)').order('created_at', { ascending: false }).limit(100),
-      supabase.from('tickets').select('total').eq('status', 'cargado'),
+      supabase.from('tickets').select('*').eq('status', 'cargado'),
       supabase.from('settings').select('key, value').in('key', ['contadora', 'envio_automatico']),
     ]);
     setReports(r.data || []);
-    setPending({ count: p.data?.length || 0, total: (p.data || []).reduce((a, t) => a + Number(t.total), 0) });
+    const eligible = (p.data || []).filter(t => !savedReimbursementError(t));
+    setPending({ count: eligible.length, total: eligible.reduce((a, t) => a + Number(t.total), 0) });
     const m = Object.fromEntries((s.data || []).map((x) => [x.key, x.value]));
     setContadora({ ...(m.contadora || {}), email: m.contadora?.email || 'estudiocaballerosalva@gmail.com' });
     setAutoOn(m.envio_automatico?.activo !== false);

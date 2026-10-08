@@ -1,3 +1,4 @@
+import { loadingBounds } from '../../../shared/ticket-stats.js';
 import { useCallback, useEffect, useState } from 'react';
 import { Search, Download, Receipt, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -5,7 +6,7 @@ import { Button, Card, Empty, Spinner, StatusBadge, useToast, cx, IS_DEMO } from
 import PeriodPicker, { presetRange } from '../../components/PeriodPicker';
 import TicketDetail from '../../components/TicketDetail';
 import { PageHead } from './AdminLayout';
-import { money, dateAR } from '../../lib/format';
+import { money, dateAR, dateTimeAR } from '../../lib/format';
 
 const PAGE = 50;
 
@@ -25,7 +26,8 @@ export default function Tickets() {
   useEffect(() => { setPage(0); }, [period.from, period.to, status, debounced]);
 
   const buildQuery = useCallback((select, opts) => {
-    let query = supabase.from('tickets').select(select, opts).gte('fecha_comprobante', period.from).lte('fecha_comprobante', period.to);
+    const bounds = loadingBounds(period.from, period.to);
+    let query = supabase.from('tickets').select(select, opts).gte('created_at', bounds.start).lt('created_at', bounds.end);
     if (status !== 'todos') query = query.eq('status', status);
     if (debounced) {
       const s = debounced.replace(/[%,()]/g, ' ');
@@ -38,7 +40,7 @@ export default function Tickets() {
     setRows(null);
     const [{ data, count: c, error }, totals] = await Promise.all([
       buildQuery('*, profiles:created_by(full_name)', { count: 'exact' })
-        .order('fecha_comprobante', { ascending: false }).order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }).order('id')
         .range(page * PAGE, page * PAGE + PAGE - 1),
       buildQuery('total').neq('status', 'anulado').limit(10000),
     ]);
@@ -72,7 +74,7 @@ export default function Tickets() {
 
   return (
     <div className="mx-auto max-w-7xl">
-      <PageHead title="Recibos de viáticos" text="Todos los reintegros escaneados. Tocá uno para ver las fotos, corregirlo o anularlo."
+      <PageHead title="Recibos de viáticos" text="Todos los reintegros por fecha de carga en Argentina. Tocá uno para ver las fotos, corregirlo o anularlo."
         actions={<>
           <Button variant="outline" icon={Download} onClick={exportCsv}>Exportar CSV</Button>
         </>} />
@@ -81,7 +83,7 @@ export default function Tickets() {
         <PeriodPicker value={period} onChange={setPeriod} />
         <select className="field !w-auto !py-2 text-[13px]" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Estado">
           <option value="todos">Todos los estados</option>
-          <option value="cargado">Por enviar (viernes 12 h)</option>
+          <option value="cargado">Por enviar</option>
           <option value="enviado">Enviados</option>
           <option value="anulado">Anulados</option>
         </select>
@@ -105,7 +107,7 @@ export default function Tickets() {
             <table className="w-full min-w-[900px] text-[14px]">
               <thead className="bg-fog text-left text-[12.5px] text-slate">
                 <tr>
-                  <th className="py-2.5 pl-5 pr-3 font-medium">Fecha</th>
+                  <th className="py-2.5 pl-5 pr-3 font-medium">Carga / recibo</th>
                   <th className="px-3 py-2.5 font-medium">Estudio</th>
                   <th className="px-3 py-2.5 font-medium">Visita</th>
                   <th className="px-3 py-2.5 font-medium">Paciente</th>
@@ -118,7 +120,7 @@ export default function Tickets() {
               <tbody className="divide-y divide-mist">
                 {rows.map((t) => (
                   <tr key={t.id} className="cursor-pointer hover:bg-fog/60" onClick={() => setOpen(t)}>
-                    <td className="whitespace-nowrap py-3 pl-5 pr-3 tabular-nums">{dateAR(t.fecha_comprobante)}</td>
+                    <td className="whitespace-nowrap py-3 pl-5 pr-3 tabular-nums">{dateTimeAR(t.created_at)}<span className="block text-xs text-slate">Recibo: {dateAR(t.fecha_comprobante)}</span></td>
                     <td className="px-3 py-3 font-mono text-[13px] font-semibold">{t.estudio || '—'}</td>
                     <td className="px-3 py-3 font-mono text-[13px]">{t.visita || '—'}</td>
                     <td className="px-3 py-3 font-mono text-[13px]">{[t.paciente_iniciales, t.paciente_numero].filter(Boolean).join(' ') || '—'}</td>

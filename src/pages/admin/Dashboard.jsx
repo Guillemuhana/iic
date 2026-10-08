@@ -1,9 +1,9 @@
+import { api } from '../../lib/api';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, Cell } from 'recharts';
 import { TrendingUp, TrendingDown, Minus, Clock } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { Card, Spinner, cx } from '../../components/ui';
+import { Card, Spinner, cx, IS_DEMO } from '../../components/ui';
 import PeriodPicker, { presetRange } from '../../components/PeriodPicker';
 import { PageHead } from './AdminLayout';
 import { money, moneyShort, num, dayShort, addDays, dateAR } from '../../lib/format';
@@ -38,22 +38,22 @@ export default function Dashboard() {
     const prevTo = addDays(period.from, -1);
     const prevFrom = addDays(prevTo, -(days - 1));
     Promise.all([
-      supabase.rpc('ticket_stats', { p_from: period.from, p_to: period.to }),
-      supabase.rpc('ticket_stats', { p_from: prevFrom, p_to: prevTo }),
+      IS_DEMO ? import('../../lib/supabase').then(({supabase}) => supabase.rpc('ticket_stats', {p_from:period.from,p_to:period.to})).then(r=>r.data) : api('ticket-stats', { body: { from: period.from, to: period.to } }),
+      IS_DEMO ? import('../../lib/supabase').then(({supabase}) => supabase.rpc('ticket_stats', {p_from:prevFrom,p_to:prevTo})).then(r=>r.data) : api('ticket-stats', { body: { from: prevFrom, to: prevTo } }),
     ]).then(([a, b]) => {
       if (!alive) return;
-      if (a.error) { setError(a.error.message); return; }
+
       setError(null);
-      setStats(a.data);
-      setPrev(b.data);
-    });
+      setStats(a);
+      setPrev(b);
+    }).catch(e => { if (alive) setError(e.message); });
     return () => { alive = false; };
   }, [period.from, period.to]);
 
   const series = useMemo(() => (stats ? fillDays(stats.por_dia || [], period.from, period.to) : []), [stats, period]);
   const hours = useMemo(() => {
     const m = new Map((stats?.por_hora || []).map((h) => [h.hora, h.cantidad]));
-    return Array.from({ length: 15 }, (_, i) => i + 7).map((h) => ({ hora: `${h}h`, cantidad: m.get(h) || 0 }));
+    return Array.from({ length: 24 }, (_, i) => i).map((h) => ({ hora: `${h}h`, cantidad: m.get(h) || 0 }));
   }, [stats]);
 
   const nombre = profile?.full_name || 'Doctor';
@@ -61,20 +61,21 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-7xl">
-      <PageHead title={`Buen día, ${nombre.split(' ').slice(0, 2).join(' ')}`} text="Reintegros de viáticos pagados a pacientes de los estudios, según los recibos escaneados." actions={<PeriodPicker value={period} onChange={setPeriod} />} />
+      <PageHead title={`Buen día, ${nombre.split(' ').slice(0, 2).join(' ')}`} text="Reintegros de viáticos pagados a pacientes de los estudios, por fecha de carga en Argentina. La fecha del recibo se conserva por separado." actions={<PeriodPicker value={period} onChange={setPeriod} />} />
 
       {error && <Card className="mb-6 border-lesion/30 bg-lesion-soft p-4 text-sm text-lesion">No se pudieron cargar las estadísticas: {error}</Card>}
 
+      {stats?.revision > 0 && <Card className="mb-6 border-iodine/30 bg-iodine-soft p-4 text-sm">{stats.revision} recibo(s) necesitan revisión: {money(stats.revision_total)} registrados. Se ven en este panel, pero se excluyen del envío a la contadora. Total confirmado: {money(stats.confirmado_total)}. <Link className="underline font-semibold" to="/panel/comprobantes">Revisar recibos</Link></Card>}
       {!stats ? (
-        <div className="grid place-items-center py-24"><Spinner className="size-7" /></div>
+        <div className="grid place-items-center py-24">{!error && <Spinner className="size-7" />}</div>
       ) : (
         <>
           {/* Encabezado: el total del período como frase, con su tendencia */}
           <Card className="overflow-hidden">
             <div className="grid gap-0 lg:grid-cols-[1fr_auto]">
               <div className="p-6 sm:p-8">
-                <p className="text-[15px] text-slate">Reintegros pagados {rango}</p>
-                <p className="mt-1 text-[44px] font-extrabold leading-none tracking-tight text-petrol tabular-nums sm:text-[56px]">{money(stats.total, { decimals: 0 })}</p>
+                <p className="text-[15px] text-slate">Reintegros cargados {rango}</p>
+                <p className="mt-1 text-[44px] font-extrabold leading-none tracking-tight text-petrol tabular-nums sm:text-[56px]">{money(stats.total)}</p>
                 <Trend now={stats.total} before={prev?.total} />
               </div>
               <dl className="grid grid-cols-3 border-t border-mist lg:w-[440px] lg:grid-cols-1 lg:border-l lg:border-t-0">

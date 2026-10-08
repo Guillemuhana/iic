@@ -18,15 +18,19 @@ export default function CajaHome() {
   const [autoOn, setAutoOn] = useState(true);
   const [schedule, setSchedule] = useState({});
   const [open, setOpen] = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
   const load = useCallback(async () => {
     const start = new Date(day + 'T00:00:00-03:00').toISOString();
     const end = new Date(addDays(day, 1) + 'T00:00:00-03:00').toISOString();
-    const [{ data }, { data: pend }, { data: cfg }] = await Promise.all([
+    const [daily, pendingResult, configResult] = await Promise.all([
       supabase.from('tickets').select('*, profiles:created_by(full_name)').gte('created_at', start).lt('created_at', end).order('created_at', { ascending: false }),
       supabase.from('tickets').select('*').eq('status', 'cargado'),
       supabase.from('settings').select('value').eq('key', 'envio_automatico').maybeSingle(),
     ]);
+    if (daily.error || pendingResult.error) { setLoadError((daily.error || pendingResult.error).message); return; }
+    setLoadError(null);
+    const data = daily.data, pend = pendingResult.data, cfg = configResult.data;
     setTickets(data || []);
     const eligible = (pend || []).filter(t => !savedReimbursementError(t));
     setPending({ count: eligible.length, total: eligible.reduce((a, t) => a + Number(t.total), 0), review: (pend || []).length - eligible.length });
@@ -34,10 +38,16 @@ export default function CajaHome() {
     setSchedule(cfg?.value || {});
   }, [day]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const refresh = () => { if (document.visibilityState === 'visible') load(); };
+    window.addEventListener('focus', refresh);
+    const timer = setInterval(refresh, 60000);
+    return () => { window.removeEventListener('focus', refresh); clearInterval(timer); };
+  }, [load]);
 
   const visibles = useMemo(() => (tickets || []).filter((t) => t.status !== 'anulado'), [tickets]);
-  const totalDia = visibles.filter(t => !savedReimbursementError(t)).reduce((a, t) => a + Number(t.total), 0);
+  const totalDia = visibles.reduce((a, t) => a + Number(t.total), 0);
   const mios = visibles.filter((t) => t.created_by === profile?.id).length;
   const isToday = day === todayISO();
   const nextSend = nextWeeklySend(new Date(), schedule);
@@ -58,7 +68,8 @@ export default function CajaHome() {
 
         <div className="relative mt-8">
           <p className="text-[14px] text-white/70">{isToday ? `${longDayAR(day)} · Hola, ${profile?.full_name?.split(' ')[0] || 'equipo'}` : longDayAR(day)}</p>
-          <p className="mt-1.5 text-[38px] font-extrabold leading-none tracking-tight tabular-nums">{money(totalDia, { decimals: 0 })}</p>
+          <p className="mt-1 text-xs text-white/70">Monto registrado del día</p>
+          <p className="mt-1.5 text-[38px] font-extrabold leading-none tracking-tight tabular-nums">{money(totalDia)}</p>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-white/75">
               {visibles.length} recibo{visibles.length === 1 ? '' : 's'} cargado{visibles.length === 1 ? '' : 's'}{isToday ? ' hoy' : ''}
@@ -70,6 +81,7 @@ export default function CajaHome() {
         </div>
       </header>
 
+      {loadError && <p role="alert" className="mx-4 my-3 rounded-xl bg-lesion-soft p-3 text-lesion">No se pudieron cargar los recibos: {loadError}. <button className="underline" onClick={load}>Reintentar</button></p>}
       <div className="relative -mt-5 px-4">
         <Card className="flex items-start gap-3 p-4">
           <span className={cx('mt-0.5 grid size-9 shrink-0 place-items-center rounded-full', pending.count ? 'bg-iodine-soft text-iodine' : 'bg-saline/15 text-saline-dark')}>
