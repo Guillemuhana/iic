@@ -5,6 +5,39 @@ import { verifyAmount } from '../shared/amount-verification.js';
 import { weeklyWindow, nextWeeklySend } from '../shared/report-schedule.js';
 import { normalizeDocument, checkTicket, emptyTicket } from '../shared/ticket-rules.js';
 import { buildWorkbook, buildEmailHtml } from '../api/_lib/report.js';
+import { readTicket } from '../api/_lib/groq.js';
+
+test('Independent readings agree or request review without inheriting an OCR guess', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-only';
+  try {
+    let calls = 0;
+    globalThis.fetch = async (_url, options) => {
+      const body = JSON.parse(options.body);
+      const text = JSON.stringify(body.messages);
+      const response = calls++ === 0
+        ? { texto_leido: 'Recibo de viáticos, importe legible', recibo: { total: 163934, monto_detalle: '$152.034 = $163.934' } }
+        : { monto: 163934, confianza: .95 };
+      if (calls === 2) assert.ok(!text.includes('163934'), 'Verifier must not receive the first reading');
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(response) } }] }) };
+    };
+    const result = await readTicket('data:image/jpeg;base64,test');
+    assert.equal(calls, 2);
+    assert.equal(result.amountReview.confirmed, true);
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(calls++ % 2 === 0
+      ? { texto_leido: 'Recibo con importe dudoso', recibo: { total: 452057, monto_detalle: '$452.057' } }
+      : { monto: 163934, confianza: .95 }) } }] }) });
+    const mismatch = await readTicket('data:image/jpeg;base64,test');
+    assert.equal(mismatch.amountReview.confirmed, false);
+    assert.equal(mismatch.amountReview.checked, 163934);
+    assert.equal(mismatch.data.confianza.total, .4);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.GROQ_API_KEY;
+    else process.env.GROQ_API_KEY = originalKey;
+  }
+});
 
 test('Importes: disagreement, thousand separators and unreadable verification require review', () => {
   assert.equal(verifyAmount(163934, '163.934', '$152.034 = $163.934', .95).confirmed, true);

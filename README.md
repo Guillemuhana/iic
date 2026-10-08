@@ -128,4 +128,4 @@ supabase/migrations  001 esquema base · 002 recibo de viáticos
 tests/               pruebas de validación
 ```
 
-La lectura compara el importe con una tercera pasada independiente sobre la imagen original. La persona debe revisar y confirmar el monto antes de guardar: las coincidencias de IA no garantizan exactitud. Configurar SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS y MAIL_FROM para habilitar el correo.
+La lectura compara el importe con una segunda lectura independiente sobre la imagen original. La persona debe revisar y confirmar el monto antes de guardar: las coincidencias de IA no garantizan exactitud. Configurar SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS y MAIL_FROM para habilitar el correo.
