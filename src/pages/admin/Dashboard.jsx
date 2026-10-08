@@ -58,11 +58,12 @@ export default function Dashboard() {
   }, [stats]);
 
   const nombre = profile?.full_name || 'Doctor';
+  const saludoNombre = /^mauro\s+pautasso$/i.test(nombre.trim()) ? 'Doctor Mauro Pautasso' : nombre;
   const rango = period.from === period.to ? `el ${dateAR(period.from)}` : `del ${dateAR(period.from)} al ${dateAR(period.to)}`;
 
   return (
     <div className="admin-dashboard mx-auto max-w-7xl">
-      <PageHead title={`${clock.greeting}, ${nombre.split(' ').slice(0, 2).join(' ')}`} text="Reintegros de viáticos pagados a pacientes de los estudios, por fecha de carga en Argentina. La fecha del recibo se conserva por separado." actions={<PeriodPicker value={period} onChange={setPeriod} />} />
+      <PageHead title={`${clock.greeting}, ${saludoNombre}`} text="Reintegros de viáticos pagados a pacientes de los estudios, por fecha de carga en Argentina. La fecha del recibo se conserva por separado." actions={<PeriodPicker value={period} onChange={setPeriod} />} />
 
       {error && <Card className="mb-6 border-lesion/30 bg-lesion-soft p-4 text-sm text-lesion">No se pudieron cargar las estadísticas: {error}</Card>}
 
