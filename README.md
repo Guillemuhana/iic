@@ -14,12 +14,14 @@ Stack: React + Vite + Tailwind · Supabase (Auth, Postgres con RLS, Storage) · 
 ## 1. Supabase
 
 1. Creá un proyecto nuevo en Supabase.
-2. **SQL Editor** → ejecutá completo `supabase/migrations/001_schema.sql` y después `supabase/migrations/002_recibo_viaticos.sql`. Crean tablas, roles, políticas RLS, el bucket privado `tickets`, los campos del recibo de viáticos y las estadísticas. Se pueden volver a ejecutar sin romper nada.
-3. **Authentication → Users → Add user**: creá el usuario del doctor (marcá *Auto confirm*).
-4. Convertilo en admin (SQL Editor):
+2. **SQL Editor** → ejecutá completos y en orden `supabase/migrations/001_schema.sql`, `002_recibo_viaticos.sql`, `003_seguridad.sql`, `004_rol_desde_app_metadata.sql` y `005_ajustes_advisors.sql`. Crean tablas, roles, políticas RLS, el bucket privado `tickets`, los campos del recibo de viáticos, las estadísticas y el endurecimiento de permisos. Se pueden volver a ejecutar sin romper nada.
+3. **Authentication → Users → Add user**: creá el usuario del doctor (marcá *Auto confirm* y elegí vos la contraseña).
+4. Convertilo en admin (SQL Editor). El rol se asigna en `app_metadata` (el usuario no la puede modificar) y un trigger activa el perfil:
    ```sql
-   update public.profiles set role = 'admin', active = true, full_name = 'Dr. Pautasso'
+   update auth.users set raw_app_meta_data = raw_app_meta_data || '{"role":"admin"}'::jsonb
    where email = 'EMAIL_DEL_DOCTOR';
+   update public.profiles set full_name = 'Dr. Pautasso' where email = 'EMAIL_DEL_DOCTOR';
+   select role, active from public.profiles where email = 'EMAIL_DEL_DOCTOR';  -- admin | true
    ```
 5. **Authentication → Sign In / Providers**: desactivá *Allow new users to sign up* (los usuarios se crean solo desde el panel).
 6. Copiá de **Project Settings → API**: URL, `anon`/publishable key y `service_role` key.
