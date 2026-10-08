@@ -26,11 +26,13 @@ export default handler(['GET', 'POST', 'PATCH'], async (req) => {
       email,
       password: body.password,
       email_confirm: true,
-      user_metadata: { full_name, role },
+      user_metadata: { full_name },
+      app_metadata: { role },
     });
     if (error) throw new HttpError(400, error.message.includes('already') ? 'Ya existe un usuario con ese email.' : error.message);
     // el trigger crea el perfil; lo aseguramos por si el trigger no estaba
-    await sb.from('profiles').upsert({ id: data.user.id, email, full_name: full_name || email.split('@')[0], role });
+    const { error: profileError } = await sb.from('profiles').upsert({ id: data.user.id, email, full_name: full_name || email.split('@')[0], role, active: true });
+    if (profileError) throw new HttpError(500, profileError.message);
     return { user: { id: data.user.id, email, full_name, role, active: true } };
   }
 
@@ -44,6 +46,10 @@ export default handler(['GET', 'POST', 'PATCH'], async (req) => {
   if (typeof body.full_name === 'string') patch.full_name = body.full_name.trim();
   if (roles.includes(body.role)) patch.role = body.role;
   if (typeof body.active === 'boolean') patch.active = body.active;
+  if (roles.includes(body.role)) {
+    const { error } = await sb.auth.admin.updateUserById(id, { app_metadata: { role: body.role } });
+    if (error) throw new HttpError(500, error.message);
+  }
   if (Object.keys(patch).length) {
     const { error } = await sb.from('profiles').update(patch).eq('id', id);
     if (error) throw new HttpError(500, error.message);
