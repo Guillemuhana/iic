@@ -113,15 +113,14 @@ export default function ScanFlow() {
     setAmountBusy(true);
     setAmountConfirmed(false);
     try {
-      const prepared = await prepareTicketImage(blob);
-      URL.revokeObjectURL(prepared.previewUrl);
+      const prepared = track(await prepareTicketImage(blob));
       const field = target.doc.recibo ? 'recibo' : 'transferencia';
       const result = await api('scan-amount', { body: { image: prepared.originalDataUrl, field } });
-      setPhotos(list => list.map(p => p.id === target.id ? { ...p, amountReview: result.amountReview, doc: { ...p.doc,
+      setPhotos(list => list.map(p => p.id === target.id ? { ...p, amountPreviewUrl: prepared.previewUrl, amountReview: result.amountReview, doc: { ...p.doc,
         ...(field === 'recibo' ? { recibo: { ...p.doc.recibo, total: result.amount, monto_detalle: result.amount == null ? null : String(result.amount) } }
           : { transferencia: { ...p.doc.transferencia, monto: result.amount } }),
       } } : p));
-      setTicket(value => ({ ...value, total: result.amount, monto_detalle: result.amount != null ? String(result.amount) : value.monto_detalle }));
+      setTicket(value => ({ ...value, total: result.amount, monto_detalle: result.amount != null ? String(result.amount) : null }));
       setMeta(value => ({ ...value, fieldConfidence: { ...value.fieldConfidence, total: result.amountReview.confirmed ? .9 : .4 } }));
       setAmountPhoto(null);
       if (result.amount === null) toast('Relectura lista. Compará las cifras con la foto e ingresá el importe correcto.');
@@ -344,6 +343,7 @@ export default function ScanFlow() {
                 {photos.filter((p) => p.amountReview).map((p) => (
                   <div key={p.id} className={cx('mt-3 rounded-xl p-3 text-sm', p.amountReview.confirmed ? 'bg-fog text-slate' : 'bg-iodine-soft text-iodine')}>
                     <p>{p.amountReview.message}</p>
+                    {p.amountPreviewUrl && <img src={p.amountPreviewUrl} alt="Línea del importe ampliada para comparar cada cifra" className="mt-3 max-h-64 w-full rounded-lg border border-mist bg-white object-contain" />}
                     <p className="mt-1">Lectura inicial: {p.amountReview.extracted != null ? money(p.amountReview.extracted) : 'ilegible'} · Segunda lectura: {p.amountReview.checked != null ? money(p.amountReview.checked) : 'sin confirmar'}</p>
                     {(p.doc.recibo || p.doc.transferencia) && <Button variant="outline" className="mt-3 w-full" icon={ScanText} onClick={() => setAmountPhoto(p)}>Seleccionar el importe y volver a leer</Button>}
                   </div>

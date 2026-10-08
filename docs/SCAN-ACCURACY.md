@@ -44,6 +44,9 @@ Documentación oficial:
 
 Los precios y cupos cambian. No se activó ningún proveedor adicional ni facturación.
 No se ha demostrado que un proveedor alternativo sea mejor para estos recibos.
+El usuario eligió continuar con Groq gratis. No activar motores adicionales sin
+una nueva instrucción. El recorte ampliado queda visible junto a los candidatos
+para facilitar la revisión de cada cifra.
 
 ## Medición reproducible
 
