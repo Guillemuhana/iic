@@ -167,7 +167,7 @@ body {
 .admin-shell header .admin-brand { padding-top: max(1rem, env(safe-area-inset-top)); }
 
 /* A luminous outline follows menu interactions without covering the label. */
-@property --menu-glow-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@property --menu-glow-angle { syntax: "<angle>"; initial-value: 0deg; inherits: true; }
 .admin-nav-link { isolation: isolate; --menu-glow-angle: 0deg; }
 .admin-nav-link::before {
   content: ""; position: absolute; inset: 0; padding: 2px; border-radius: inherit;
