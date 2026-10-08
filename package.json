@@ -1,0 +1,35 @@
+{
+  "name": "iic-tickets",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Sistema de carga de comprobantes con lectura IA — Instituto de Investigaciones Clínicas de Córdoba",
+  "scripts": {
+    "dev": "vite",
+    "dev:full": "vercel dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.js",
+    "build:demo": "vite build --config vite.demo.config.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "exceljs": "^4.4.0",
+    "lucide-react": "^0.460.0",
+    "nodemailer": "^6.9.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "recharts": "^2.13.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.0.0",
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}

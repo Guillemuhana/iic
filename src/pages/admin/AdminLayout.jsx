@@ -1,0 +1,89 @@
+import { NavLink, Outlet, Link } from 'react-router-dom';
+import { BarChart3, Receipt, Send, Users, Settings, Camera, LogOut } from 'lucide-react';
+import { Logo, InstituteMark, cx } from '../../components/ui';
+import { longDayAR } from '../../lib/format';
+import { useAuth } from '../../context/AuthContext';
+
+const NAV = [
+  { to: '/panel', end: true, label: 'Estadísticas', icon: BarChart3 },
+  { to: '/panel/comprobantes', label: 'Recibos', icon: Receipt },
+  { to: '/panel/envios', label: 'Envíos a contadora', icon: Send },
+  { to: '/panel/usuarios', label: 'Usuarios', icon: Users },
+  { to: '/panel/configuracion', label: 'Configuración', icon: Settings },
+];
+
+export default function AdminLayout() {
+  const { profile, signOut } = useAuth();
+  return (
+    <div className="min-h-full lg:grid lg:grid-cols-[256px_1fr]">
+      <aside className="petrol-hero hidden text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+        <div className="px-6 pb-7 pt-7"><Logo light full className="w-40" /></div>
+        <nav className="flex-1 space-y-1 px-3">
+          {NAV.map(({ to, end, label, icon: Icon }) => (
+            <NavLink key={to} to={to} end={end}
+              className={({ isActive }) => cx('flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14.5px] font-medium transition-colors',
+                isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10 hover:text-white')}>
+              <Icon className="size-[18px]" /> {label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="space-y-3 p-4">
+          <Link to="/caja/escanear" className="flex items-center justify-center gap-2 rounded-xl bg-saline px-3 py-2.5 text-sm font-bold text-white hover:bg-saline-dark">
+            <Camera className="size-4" /> Escanear recibo
+          </Link>
+          <div className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5">
+            <div className="grid size-9 place-items-center rounded-full bg-white/15 text-sm font-bold">
+              {(profile?.full_name || profile?.email || '?').slice(0, 1).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1 leading-tight">
+              <p className="truncate text-sm font-semibold">{profile?.full_name}</p>
+              <p className="truncate text-[12px] text-white/55">Administrador</p>
+            </div>
+            <button onClick={signOut} className="rounded-lg p-1.5 text-white/70 hover:bg-white/10 hover:text-white" aria-label="Cerrar sesión"><LogOut className="size-4" /></button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Navegación móvil */}
+      <header className="petrol-hero safe-top sticky top-0 z-30 text-white lg:hidden">
+        <div className="flex items-center justify-between gap-3 px-4 pb-3">
+          <InstituteMark light small section="Panel de administración" />
+          <div className="flex gap-1">
+            <Link to="/caja" className="grid size-10 place-items-center rounded-xl bg-white/10" aria-label="Escanear"><Camera className="size-5" /></Link>
+            <button onClick={signOut} className="grid size-10 place-items-center rounded-xl bg-white/10" aria-label="Cerrar sesión"><LogOut className="size-5" /></button>
+          </div>
+        </div>
+        <nav className="scrollbar-thin flex gap-1 overflow-x-auto px-3 pb-3">
+          {NAV.map(({ to, end, label }) => (
+            <NavLink key={to} to={to} end={end}
+              className={({ isActive }) => cx('shrink-0 rounded-lg px-3 py-1.5 text-[13px] font-semibold', isActive ? 'bg-white text-petrol' : 'text-white/75')}>
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+      </header>
+
+      <div className="min-w-0">
+        <div className="hidden items-center justify-between border-b border-mist bg-white/80 px-10 py-3.5 backdrop-blur lg:flex">
+          <InstituteMark small section="Panel de administración · Reintegros de viáticos" />
+          <p className="text-[13px] text-slate">{longDayAR()}</p>
+        </div>
+        <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-9">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  );
+}
+
+export function PageHead({ title, text, actions }) {
+  return (
+    <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h1 className="text-[26px] font-extrabold tracking-tight text-petrol [text-wrap:balance] sm:text-[30px]">{title}</h1>
+        {text && <p className="mt-1 max-w-2xl text-[15px] text-slate">{text}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+    </div>
+  );
+}

@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-inst: "Marcellus SC", "Cormorant SC", Georgia, "Times New Roman", serif;
+
+  --color-petrol: #123A5A;
+  --color-petrol-2: #174D78;
+  --color-petrol-3: #0065B3;
+  --color-paper: #F6F7F9;
+  --color-mist: #DDE2E8;
+  --color-fog: #EDF2F7;
+  --color-ink: #303238;
+  --color-slate: #62666D;
+  --color-saline: #0065B3;
+  --color-saline-dark: #004F8C;
+  --color-iodine: #B7791F;
+  --color-iodine-soft: #FBF1DF;
+  --color-lesion: #B23A48;
+  --color-lesion-soft: #F8E5E7;
+  --color-thermal: #FFFEFA;
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1, "ss01" 1;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible { outline: 2px solid var(--color-saline); outline-offset: 2px; border-radius: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* Inputs base */
+.field {
+  width: 100%;
+  border: 1px solid var(--color-mist);
+  background: #fff;
+  border-radius: 10px;
+  padding: 0.65rem 0.8rem;
+  font-size: 15px;
+  color: var(--color-ink);
+  transition: border-color .15s, box-shadow .15s;
+}
+.field:focus { outline: none; border-color: var(--color-petrol-3); box-shadow: 0 0 0 3px rgb(0 101 179 / .15); }
+.field[data-flag="warn"] { border-color: var(--color-iodine); background: var(--color-iodine-soft); }
+.field[data-flag="error"] { border-color: var(--color-lesion); background: var(--color-lesion-soft); }
+
+/* Tira de ticket térmico: el elemento distintivo del sistema */
+.thermal {
+  background: var(--color-thermal);
+  font-family: var(--font-mono);
+  position: relative;
+  box-shadow: 0 1px 0 rgb(15 52 64 / .06), 0 18px 40px -24px rgb(15 52 64 / .45);
+}
+.thermal::before, .thermal::after {
+  content: "";
+  position: absolute; left: 0; right: 0; height: 10px;
+  background:
+    linear-gradient(135deg, var(--thermal-edge, var(--color-paper)) 5px, transparent 0) 0 0 / 10px 10px repeat-x,
+    linear-gradient(225deg, var(--thermal-edge, var(--color-paper)) 5px, transparent 0) 0 0 / 10px 10px repeat-x;
+}
+.thermal::before { top: 0; }
+.thermal::after { bottom: 0; transform: rotate(180deg); }
+.thermal-rule { border-top: 1px dashed rgb(23 38 44 / .35); }
+
+/* Visor de cámara */
+.viewfinder-mask {
+  box-shadow: 0 0 0 9999px rgb(6 22 28 / .62);
+}
+@keyframes sweep { 0% { top: 4%; } 100% { top: 94%; } }
+.scan-line { animation: sweep 1.4s ease-in-out infinite alternate; }
+
+@keyframes print { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
+.printing { animation: print .9s cubic-bezier(.2,.7,.2,1) both; }
+
+.safe-bottom { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+.safe-top { padding-top: max(0.75rem, env(safe-area-inset-top)); }
+
+.scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--color-mist); border-radius: 8px; }
+
+/* Nombre del instituto: mismas mayúsculas clásicas del logo */
+.inst-name { font-family: var(--font-inst); letter-spacing: .045em; font-weight: 400; text-wrap: balance; }
+
+/* Fondo del encabezado: petróleo con una luz suave y el monograma de agua */
+.petrol-hero {
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgb(0 101 179 / .20) 0%, transparent 55%),
+    linear-gradient(180deg, #123A5A 0%, #174D78 100%);
+}
+.surface { background: #fff; border: 1px solid var(--color-mist); box-shadow: 0 1px 2px rgb(15 52 64 / .04), 0 8px 24px -18px rgb(15 52 64 / .25); }
