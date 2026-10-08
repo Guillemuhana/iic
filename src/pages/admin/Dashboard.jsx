@@ -60,7 +60,7 @@ export default function Dashboard() {
   const rango = period.from === period.to ? `el ${dateAR(period.from)}` : `del ${dateAR(period.from)} al ${dateAR(period.to)}`;
 
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="admin-dashboard mx-auto max-w-7xl">
       <PageHead title={`Buen día, ${nombre.split(' ').slice(0, 2).join(' ')}`} text="Reintegros de viáticos pagados a pacientes de los estudios, por fecha de carga en Argentina. La fecha del recibo se conserva por separado." actions={<PeriodPicker value={period} onChange={setPeriod} />} />
 
       {error && <Card className="mb-6 border-lesion/30 bg-lesion-soft p-4 text-sm text-lesion">No se pudieron cargar las estadísticas: {error}</Card>}
@@ -71,7 +71,7 @@ export default function Dashboard() {
       ) : (
         <>
           {/* Encabezado: el total del período como frase, con su tendencia */}
-          <Card className="overflow-hidden">
+          <Card className="admin-total-card overflow-hidden">
             <div className="grid gap-0 lg:grid-cols-[1fr_auto]">
               <div className="p-6 sm:p-8">
                 <p className="text-[15px] text-slate">Reintegros cargados {rango}</p>

@@ -15,20 +15,20 @@ const NAV = [
 export default function AdminLayout() {
   const { profile, signOut } = useAuth();
   return (
-    <div className="min-h-full lg:grid lg:grid-cols-[256px_1fr]">
-      <aside className="petrol-hero hidden text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
-        <div className="px-6 pb-7 pt-7"><Logo light full className="w-40" /></div>
+    <div className="admin-shell min-h-full lg:grid lg:grid-cols-[272px_1fr]">
+      <aside className="admin-sidebar petrol-hero hidden text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+        <div className="px-5 pb-7 pt-7"><Logo light full className="admin-sidebar-logo !w-full" /></div>
         <nav className="flex-1 space-y-1 px-3">
           {NAV.map(({ to, end, label, icon: Icon }) => (
             <NavLink key={to} to={to} end={end}
-              className={({ isActive }) => cx('flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14.5px] font-medium transition-colors',
+              className={({ isActive }) => cx('admin-nav-link flex items-center gap-3 rounded-xl px-3 py-3 text-[14.5px] font-medium transition-colors',
                 isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10 hover:text-white')}>
               <Icon className="size-[18px]" /> {label}
             </NavLink>
           ))}
         </nav>
         <div className="space-y-3 p-4">
-          <Link to="/caja/escanear" className="flex items-center justify-center gap-2 rounded-xl bg-saline px-3 py-2.5 text-sm font-bold text-white hover:bg-saline-dark">
+          <Link to="/caja/escanear" className="admin-scan-button flex items-center justify-center gap-2 rounded-xl bg-saline px-3 py-2.5 text-sm font-bold text-white hover:bg-saline-dark">
             <Camera className="size-4" /> Escanear recibo
           </Link>
           <div className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5">
@@ -64,11 +64,11 @@ export default function AdminLayout() {
       </header>
 
       <div className="min-w-0">
-        <div className="hidden items-center justify-between border-b border-mist bg-white/80 px-10 py-3.5 backdrop-blur lg:flex">
-          <InstituteMark small section="Panel de administración · Reintegros de viáticos" />
-          <p className="text-[13px] text-slate">{longDayAR()}</p>
+        <div className="admin-topbar hidden items-center justify-between border-b border-mist bg-white/80 px-10 py-3.5 backdrop-blur lg:flex">
+          <InstituteMark className="admin-header-mark" section="Panel de administración · Reintegros de viáticos" />
+          <p className="admin-date text-[13px] text-slate">{longDayAR()}</p>
         </div>
-        <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-9">
+        <main className="admin-main min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-9">
           <Outlet />
         </main>
       </div>
@@ -78,7 +78,7 @@ export default function AdminLayout() {
 
 export function PageHead({ title, text, actions }) {
   return (
-    <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+    <div className="admin-page-head mb-7 flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1 className="text-[26px] font-extrabold tracking-tight text-petrol [text-wrap:balance] sm:text-[30px]">{title}</h1>
         {text && <p className="mt-1 max-w-2xl text-[15px] text-slate">{text}</p>}
