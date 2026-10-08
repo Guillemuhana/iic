@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react';
+import { instituteClock } from '../../../shared/institute-clock.js';
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import { BarChart3, Receipt, Send, Users, Settings, Camera, LogOut } from 'lucide-react';
 import { Logo, InstituteMark, cx } from '../../components/ui';
-import { longDayAR } from '../../lib/format';
 import { useAuth } from '../../context/AuthContext';
 
 const NAV = [
@@ -14,6 +15,14 @@ const NAV = [
 
 export default function AdminLayout() {
   const { profile, signOut } = useAuth();
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const refresh = () => setNow(new Date());
+    const timer = setInterval(refresh, 30000);
+    window.addEventListener('focus', refresh);
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, []);
+  const clock = instituteClock(now);
   return (
     <div className="admin-shell min-h-full lg:grid lg:grid-cols-[272px_1fr]">
       <aside className="admin-sidebar petrol-hero hidden text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
@@ -61,15 +70,16 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </nav>
+        <time dateTime={now.toISOString()} className="block px-4 pb-3 text-xs capitalize text-white/75">{clock.date} · {clock.time} h (Argentina)</time>
       </header>
 
       <div className="min-w-0">
         <div className="admin-topbar hidden items-center justify-between border-b border-mist bg-white/80 px-10 py-3.5 backdrop-blur lg:flex">
-          <InstituteMark className="admin-header-mark" section="Panel de administración · Reintegros de viáticos" />
-          <p className="admin-date text-[13px] text-slate">{longDayAR()}</p>
+          <p className="text-sm font-semibold text-petrol">Panel de administración <span className="font-normal text-slate">· Reintegros de viáticos</span></p>
+          <time dateTime={now.toISOString()} className="admin-date flex items-center gap-3 text-[13px] text-slate"><span className="capitalize">{clock.date}</span><span className="border-l border-mist pl-3 font-bold tabular-nums text-petrol">{clock.time} <span className="font-normal text-slate">h · Argentina</span></span></time>
         </div>
         <main className="admin-main min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-9">
-          <Outlet />
+          <Outlet context={{ clock }} />
         </main>
       </div>
     </div>

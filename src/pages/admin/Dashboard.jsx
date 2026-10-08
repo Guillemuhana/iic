@@ -1,6 +1,6 @@
 import { api } from '../../lib/api';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, Cell } from 'recharts';
 import { TrendingUp, TrendingDown, Minus, Clock } from 'lucide-react';
 import { Card, Spinner, cx, IS_DEMO } from '../../components/ui';
@@ -26,6 +26,7 @@ function fillDays(rows, from, to) {
 
 export default function Dashboard() {
   const { profile } = useAuth();
+  const { clock } = useOutletContext();
   const [period, setPeriod] = useState({ preset: 'mes', ...presetRange('mes') });
   const [stats, setStats] = useState(null);
   const [prev, setPrev] = useState(null);
@@ -61,7 +62,7 @@ export default function Dashboard() {
 
   return (
     <div className="admin-dashboard mx-auto max-w-7xl">
-      <PageHead title={`Buen día, ${nombre.split(' ').slice(0, 2).join(' ')}`} text="Reintegros de viáticos pagados a pacientes de los estudios, por fecha de carga en Argentina. La fecha del recibo se conserva por separado." actions={<PeriodPicker value={period} onChange={setPeriod} />} />
+      <PageHead title={`${clock.greeting}, ${nombre.split(' ').slice(0, 2).join(' ')}`} text="Reintegros de viáticos pagados a pacientes de los estudios, por fecha de carga en Argentina. La fecha del recibo se conserva por separado." actions={<PeriodPicker value={period} onChange={setPeriod} />} />
 
       {error && <Card className="mb-6 border-lesion/30 bg-lesion-soft p-4 text-sm text-lesion">No se pudieron cargar las estadísticas: {error}</Card>}
 
