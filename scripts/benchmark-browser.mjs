@@ -2,8 +2,8 @@
 // Reads through the real API unless IIC_SCAN_SIMULATED=1. Save requests are always simulated, never persisted.
 import { chromium } from 'playwright';
 import { readFile } from 'node:fs/promises';
-const [file, expectedText] = process.argv.slice(2);
-if (!file || !expectedText || !process.env.IIC_SCAN_PASSWORD) throw new Error('Provide photo, expected total and IIC_SCAN_PASSWORD.');
+const [file, expectedText, transferFile] = process.argv.slice(2);
+if (!file || !expectedText || !transferFile || !process.env.IIC_SCAN_PASSWORD) throw new Error('Provide receipt photo, expected total, transfer photo and IIC_SCAN_PASSWORD.');
 const env = Object.fromEntries((await readFile('.env.local', 'utf8')).split(/\r?\n/).filter(line => /^\w+=/.test(line)).map(line => { const i = line.indexOf('='); return [line.slice(0, i), line.slice(i + 1).replace(/^"|"$/g, '')]; }));
 const auth = await fetch(`${env.VITE_SUPABASE_URL}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: env.VITE_SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: process.env.IIC_SCAN_EMAIL || 'administracion@iic.local', password: process.env.IIC_SCAN_PASSWORD }) });
 const session = await auth.json();
@@ -19,8 +19,9 @@ try {
   if (simulatedScan) await page.route('**/api/scan-ticket', route => {
     scanRequests++;
     if (scanRequests === 1) return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: 'Prueba: límite temporal. Reintentá la lectura.' }) });
+    const transfer = scanRequests >= 4;
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-    doc: { tipo: 'recibo_viatico', rotacion: 0, recibo: { estudio: 'PRUEBA', visita: 'V19', paciente_iniciales: 'FA', paciente_numero: '1023', total: Number(expectedText), fecha_comprobante: '2026-10-06' }, gastos: [], transferencia: null, datos_personales: [{ tipo: 'firma', box: { x: .1, y: .8, w: .1, h: .05 } }] },
+    doc: { tipo: transfer ? 'comprobante_transferencia' : 'recibo_viatico', rotacion: 0, recibo: transfer ? null : { estudio: 'PRUEBA', visita: 'V19', paciente_iniciales: 'FA', paciente_numero: '1023', total: Number(expectedText), fecha_comprobante: '2026-10-06' }, gastos: [], transferencia: transfer ? { monto: Number(expectedText) + 50, fecha: '2026-10-06', nro_operacion: '182687103836', plataforma: 'Mercado Pago' } : null, datos_personales: [{ tipo: 'firma', box: { x: .1, y: .8, w: .1, h: .05 } }] },
     raw_text: '', confidence: .95, fieldConfidence: {}, amountReview: { confirmed: true, message: 'Lectura simulada para probar el flujo.' }, model: 'simulated', ms: 1,
   }) }); });
   const writes = [];
@@ -79,6 +80,27 @@ try {
   const save = page.getByRole('button', { name: 'Confirmar y guardar', exact: true });
   await page.getByAltText('Foto del recibo para corroborar los datos').waitFor();
   await page.getByLabel(/^Iniciales del paciente/).fill('ZZ');
+  if (await save.count()) throw new Error('Single-document reimbursement can be saved.');
+  await page.getByRole('button', { name: 'Escanear transferencia · 2 de 2', exact: true }).click();
+  pending = waitForScan();
+  await gallery().setInputFiles(transferFile);
+  response = await pending;
+  if (simulatedScan) {
+    await page.getByText('Ya escaneaste este tipo de documento.', { exact: false }).waitFor();
+    if (writes.length) throw new Error('Duplicate document was saved.');
+    pending = waitForScan();
+    await page.getByRole('button', { name: 'Reintentar lectura', exact: true }).click();
+    response = await pending;
+  }
+  if (!response.ok()) throw new Error('Transfer scan failed.');
+  await save.waitFor();
+  if (simulatedScan) {
+    await save.click();
+    await page.getByRole('alert').filter({ hasText: 'importes diferentes' }).waitFor();
+    if (writes.length) throw new Error('Mismatched amounts were saved.');
+    await page.getByLabel(/^Total transferido/).fill(String(amount));
+    await page.getByLabel(/^Total transferido/).blur();
+  }
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error('Review overflows the phone screen.');
   await save.click();
   const privacy = page.getByRole('button', { name: 'Guardar igual', exact: true });
@@ -91,7 +113,9 @@ try {
   await page.getByRole('button', { name: 'Escanear recibo', exact: true }).waitFor();
   if (savedPayload.total !== amount || !savedPayload.extraction.importe_revisado) throw new Error('Saved amount differs from reviewed amount.');
   if (savedPayload.paciente_iniciales !== 'ZZ') throw new Error('Patient correction was lost.');
-  console.log(JSON.stringify({ simulatedScan, poorPhotoRejectedLocally: simulatedScan, readingRetryPassed: simulatedScan, patientCorrectionPreserved: true, expected: Number(expectedText), actual: amount, correct: amount === Number(expectedText), clientRegion: sent.amountRegion, review: result.amountReview, failedSavePreservedReview: true, simulatedSaveReturnedHome: true, preventedWrites: writes }, null, 2));
+  if (savedPayload.image_paths.length !== 2 || savedPayload.extraction.fotos.length !== 2) throw new Error('Documents were not saved together.');
+  if (savedPayload.pago.monto !== amount || savedPayload.nro_operacion !== '182687103836') throw new Error('Transfer fields were lost.');
+  console.log(JSON.stringify({ simulatedScan, twoDocumentsRequired: true, duplicateDocumentRejected: simulatedScan, amountMismatchBlocked: simulatedScan, photosSavedTogether: true, poorPhotoRejectedLocally: simulatedScan, readingRetryPassed: simulatedScan, patientCorrectionPreserved: true, expected: Number(expectedText), actual: amount, correct: amount === Number(expectedText), clientRegion: sent.amountRegion, review: result.amountReview, failedSavePreservedReview: true, simulatedSaveReturnedHome: true, preventedWrites: writes }, null, 2));
 } finally {
   await browser?.close();
   await fetch(`${env.VITE_SUPABASE_URL}/auth/v1/logout`, { method: 'POST', headers: { apikey: env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session.access_token}` } });

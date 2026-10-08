@@ -311,7 +311,7 @@ export function checkTicket(t) {
     out.push({ field: 'total', level: 'warn', message: `La transferencia es de $${Number(t.pago.monto).toLocaleString('es-AR')} y el recibo dice $${Number(t.total).toLocaleString('es-AR')}.` });
   }
   if (t.adjunta_comprobantes === true && !(t.comprobantes_adjuntos || []).length) {
-    out.push({ field: 'comprobantes_adjuntos', level: 'warn', message: 'El recibo dice que adjunta comprobantes. Sacales foto con "Agregar foto".' });
+    out.push({ field: 'comprobantes_adjuntos', level: 'warn', message: 'El recibo dice que adjunta comprobantes. Revisá el detalle de gastos con la foto.' });
   }
   return out;
 }

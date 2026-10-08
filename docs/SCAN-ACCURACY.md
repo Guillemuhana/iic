@@ -84,7 +84,27 @@ las compresiones o documentos.
 
 `scripts/benchmark-browser.mjs` reproduce esa prueba. Requiere Chrome y Playwright
 como herramienta temporal, la contraseña por variable de entorno y bloquea
-escrituras durante la comprobación. No pulsa Guardar.
+escrituras reales durante la comprobación. Pulsa Confirmar y guardar con las
+respuestas de Storage y base de datos interceptadas y simuladas.
+
+## Dos documentos por paciente
+
+Cada reintegro requiere un recibo de viáticos y una transferencia. Se almacenan
+las dos fotos en el mismo registro y el importe se cuenta una sola vez. La
+transferencia nunca completa automáticamente un total manuscrito ilegible.
+Los importes diferentes requieren corrección antes de guardar. Quitar una foto
+vuelve a solicitar ese documento y limpia los datos que provenían de él.
+
+La prueba móvil de 320 píxeles, con lectura y persistencia simuladas, verificó
+documento faltante, clasificación repetida, diferencia de importes, corrección
+del paciente, fallo de guardado y regreso al inicio tras un guardado confirmado.
+Las 29 pruebas automatizadas pasaron. Esta prueba de flujo no mide precisión de Groq.
+
+```powershell
+# IIC_SCAN_PASSWORD se proporciona por entorno, sin incluirla en archivos.
+$env:IIC_SCAN_SIMULATED='1'
+node scripts/benchmark-browser.mjs 'recibo.jpg' 163934 'transferencia.jpg'
+```
 
 Documentación de OCR local: https://github.com/naptha/tesseract.js/blob/master/docs/api.md
 
