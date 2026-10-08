@@ -12,13 +12,17 @@ let browser;
 try {
   browser = await chromium.launch({ executablePath: process.env.IIC_CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
   const page = await browser.newPage();
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: Number(process.env.IIC_SCAN_WIDTH || 390), height: 844 });
   await page.addInitScript(value => localStorage.setItem('iic-tickets-auth', JSON.stringify(value)), session);
   const simulatedScan = process.env.IIC_SCAN_SIMULATED === '1';
-  if (simulatedScan) await page.route('**/api/scan-ticket', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+  let scanRequests = 0;
+  if (simulatedScan) await page.route('**/api/scan-ticket', route => {
+    scanRequests++;
+    if (scanRequests === 1) return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: 'Prueba: límite temporal. Reintentá la lectura.' }) });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
     doc: { tipo: 'recibo_viatico', rotacion: 0, recibo: { estudio: 'PRUEBA', visita: 'V19', paciente_iniciales: 'FA', paciente_numero: '1023', total: Number(expectedText), fecha_comprobante: '2026-10-06' }, gastos: [], transferencia: null, datos_personales: [{ tipo: 'firma', box: { x: .1, y: .8, w: .1, h: .05 } }] },
     raw_text: '', confidence: .95, fieldConfidence: {}, amountReview: { confirmed: true, message: 'Lectura simulada para probar el flujo.' }, model: 'simulated', ms: 1,
-  }) }));
+  }) }); });
   const writes = [];
   let failSave = true;
   let savedPayload;
@@ -45,15 +49,37 @@ try {
     return route.continue();
   });
   await page.goto(`${process.env.IIC_SCAN_URL || 'https://iic-q945.vercel.app'}/caja/escanear`);
-  const pending = page.waitForResponse(response => response.url().endsWith('/api/scan-ticket') && response.request().method() === 'POST', { timeout: 90000 });
-  await page.locator('input[type=file]').setInputFiles(file);
-  const response = await pending;
+  const gallery = () => page.locator('input[type=file]:not([capture])');
+  if (simulatedScan) {
+    await page.waitForFunction(() => document.querySelector('input[capture="environment"]'));
+    const blank = await page.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 800; c.height = 1200;
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#101010'; ctx.fillRect(0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg');
+    });
+    await gallery().setInputFiles({ name: 'unreadable.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(blank.split(',')[1], 'base64') });
+    await page.getByText('La foto está demasiado borrosa.', { exact: false }).waitFor();
+    if (scanRequests !== 0) throw new Error('Unreadable photo was sent to Groq.');
+    await page.getByRole('button', { name: 'Repetir foto', exact: true }).click();
+  }
+  const waitForScan = () => page.waitForResponse(response => response.url().endsWith('/api/scan-ticket') && response.request().method() === 'POST', { timeout: 90000 });
+  let pending = waitForScan();
+  await gallery().setInputFiles(file);
+  let response = await pending;
+  if (simulatedScan) {
+    if (response.status() !== 429) throw new Error('Expected a simulated temporary reading error.');
+    pending = waitForScan();
+    await page.getByRole('button', { name: 'Reintentar lectura', exact: true }).click();
+    response = await pending;
+  }
   const result = await response.json();
   if (!response.ok()) throw new Error(result.error || `HTTP ${response.status()}`);
   const sent = response.request().postDataJSON();
   const amount = result.doc?.recibo?.total ?? null;
   const save = page.getByRole('button', { name: 'Confirmar y guardar', exact: true });
   await page.getByAltText('Foto del recibo para corroborar los datos').waitFor();
+  await page.getByLabel(/^Iniciales del paciente/).fill('ZZ');
+  if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error('Review overflows the phone screen.');
   await save.click();
   const privacy = page.getByRole('button', { name: 'Guardar igual', exact: true });
   if (await privacy.isVisible()) await privacy.click();
@@ -64,7 +90,8 @@ try {
   await page.waitForURL('**/caja');
   await page.getByRole('button', { name: 'Escanear recibo', exact: true }).waitFor();
   if (savedPayload.total !== amount || !savedPayload.extraction.importe_revisado) throw new Error('Saved amount differs from reviewed amount.');
-  console.log(JSON.stringify({ simulatedScan, expected: Number(expectedText), actual: amount, correct: amount === Number(expectedText), clientRegion: sent.amountRegion, review: result.amountReview, failedSavePreservedReview: true, simulatedSaveReturnedHome: true, preventedWrites: writes }, null, 2));
+  if (savedPayload.paciente_iniciales !== 'ZZ') throw new Error('Patient correction was lost.');
+  console.log(JSON.stringify({ simulatedScan, poorPhotoRejectedLocally: simulatedScan, readingRetryPassed: simulatedScan, patientCorrectionPreserved: true, expected: Number(expectedText), actual: amount, correct: amount === Number(expectedText), clientRegion: sent.amountRegion, review: result.amountReview, failedSavePreservedReview: true, simulatedSaveReturnedHome: true, preventedWrites: writes }, null, 2));
 } finally {
   await browser?.close();
   await fetch(`${env.VITE_SUPABASE_URL}/auth/v1/logout`, { method: 'POST', headers: { apikey: env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session.access_token}` } });

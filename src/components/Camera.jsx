@@ -11,6 +11,7 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const fileRef = useRef(null);
+  const nativeCameraRef = useRef(null);
   const capturedRef = useRef(false);
   const captureRef = useRef(null);
   const [automatic, setAutomatic] = useState(true);
@@ -34,7 +35,7 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
           audio: false,
           video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } },
         });
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        if (cancelled || capturedRef.current) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
         const track = stream.getVideoTracks()[0];
         const caps = track.getCapabilities?.() || {};
@@ -43,11 +44,15 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
           track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
         }
         const v = videoRef.current;
+        if (!v) { stream.getTracks().forEach((t) => t.stop()); return; }
         v.srcObject = stream;
         await v.play();
+        if (cancelled || capturedRef.current) { stream.getTracks().forEach((t) => t.stop()); return; }
         setVideoSize({ width: v.videoWidth, height: v.videoHeight });
         setReady(true);
       } catch (e) {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        if (cancelled || capturedRef.current) return;
         setError(e?.name === 'NotAllowedError'
           ? 'No diste permiso para usar la cámara. Habilitalo en el navegador o usá "Elegir foto".'
           : 'No se pudo abrir la cámara. Usá "Elegir foto".');
@@ -95,7 +100,13 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
   const capture = async (box = null) => {
     const v = videoRef.current;
     if (!v || !ready || capturedRef.current) return;
+    if (!v.videoWidth || !v.videoHeight || v.readyState < 2) {
+      setError('Esperá que la cámara enfoque o usá la cámara del teléfono.');
+      return;
+    }
     capturedRef.current = true;
+    setError(null);
+    try {
     const track = streamRef.current?.getVideoTracks()[0];
     // ImageCapture da la foto a resolución completa del sensor cuando existe (Android/Chrome)
     if (!box && track && 'ImageCapture' in window) {
@@ -112,12 +123,22 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
     c.getContext('2d').drawImage(v, crop.x, crop.y, crop.width, crop.height, 0, 0, c.width, c.height);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     onCapture(c);
+    } catch {
+      capturedRef.current = false;
+      setError('No se pudo tomar la foto. Probá otra vez o usá la cámara del teléfono.');
+    }
   };
   captureRef.current = capture;
 
   const onFile = (e) => {
     const f = e.target.files?.[0];
     if (f && !capturedRef.current) { capturedRef.current = true; streamRef.current?.getTracks().forEach((t) => t.stop()); onCapture(f); }
+  };
+
+  const choosePhoto = (ref) => {
+    // Prevent an automatic shot while the operating system's photo picker is open.
+    setAutomatic(false);
+    ref.current?.click();
   };
 
   return (
@@ -157,7 +178,7 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
         </div>
       </div>
 
-      <div className="safe-bottom px-6 pt-5">
+      <div className="safe-bottom max-h-[48dvh] overflow-y-auto px-6 pt-3">
         {ready && <div className="mx-auto mb-3 max-w-md text-center" aria-live="polite">
           <p className="text-sm font-medium">{!automatic ? 'Modo manual' : !documentBox ? 'Buscando documento: mostrá los cuatro bordes' : !documentBox.sharp ? 'Mejorá la luz y esperá que enfoque' : progress > 0 ? 'Mantené quieto: tomando foto automáticamente…' : 'Documento detectado. Mantené el teléfono quieto'}</p>
           <div className="mt-2 h-1 overflow-hidden rounded bg-white/15"><div className="h-full bg-emerald-400 transition-all" style={{ width: `${progress * 100}%` }} /></div>
@@ -168,17 +189,18 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
           <li>Que se vean el estudio, la visita, el importe y la aclaración.</li>
         </ul>
         <div className="flex items-center justify-between">
-          <button onClick={() => fileRef.current?.click()} className="flex w-20 flex-col items-center gap-1 text-xs text-white/80">
+          <button onClick={() => choosePhoto(fileRef)} className="flex w-20 flex-col items-center gap-1 text-xs text-white/80">
             <span className="grid size-12 place-items-center rounded-full bg-white/10"><ImageUp className="size-5" /></span>
             Elegir foto
           </button>
-          <button onClick={() => capture()} disabled={!ready} aria-label="Sacar foto"
+          <button onClick={() => ready ? capture() : choosePhoto(nativeCameraRef)} aria-label="Sacar foto"
             className="grid size-20 place-items-center rounded-full border-4 border-white/90 disabled:opacity-40">
             <span className="size-[62px] rounded-full bg-white transition-transform active:scale-90" />
           </button>
-          <span className="w-20" />
+          <button onClick={() => choosePhoto(nativeCameraRef)} className="w-20 rounded-xl px-1 py-3 text-center text-xs text-white/80">Cámara del teléfono</button>
         </div>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
+        <input ref={nativeCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFile} />
       </div>
     </div>
   );

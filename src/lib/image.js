@@ -115,6 +115,7 @@ const toDataUrl = (canvas, q) => canvas.toDataURL('image/jpeg', q);
 export async function prepareTicketImage(source) {
   const bitmap = await loadBitmap(source);
   const base = drawScaled(bitmap);
+  bitmap.close?.();
   const enhanced = enhance(base);
 
   const sh = sharpness(base);
@@ -124,6 +125,11 @@ export async function prepareTicketImage(source) {
   if (br < 70) issues.push('La foto está oscura. Buscá más luz.');
   if (br > 235) issues.push('Hay mucho brillo o reflejo sobre el ticket.');
   if (Math.min(base.width, base.height) < 700) issues.push('La foto tiene poca resolución. Acercate más.');
+  // Only severe failures interrupt automatic reading; softer warnings remain advisory.
+  const blockingIssues = [];
+  if (sh < 15) blockingIssues.push('La foto está demasiado borrosa. Mantené quieto el teléfono y esperá que enfoque.');
+  if (br < 45) blockingIssues.push('La foto está demasiado oscura. Buscá más luz.');
+  if (Math.min(base.width, base.height) < 400) blockingIssues.push('El documento quedó demasiado pequeño. Acercate y repetí la foto.');
 
   // Two independent inputs, capped below the serverless request limit.
   let aiDataUrl = toDataUrl(enhanced, 0.9);
@@ -140,7 +146,7 @@ export async function prepareTicketImage(source) {
   const blob = await toBlob(base, 0.88);
   const previewUrl = URL.createObjectURL(blob);
 
-  return { previewUrl, blob, aiDataUrl, originalDataUrl, quality: { sharpness: sh, brightness: br, issues }, width: base.width, height: base.height };
+  return { previewUrl, blob, aiDataUrl, originalDataUrl, quality: { sharpness: sh, brightness: br, issues, blockingIssues }, width: base.width, height: base.height };
 }
 
 /** Rota 90° una imagen ya preparada (por si el ticket quedó acostado). */

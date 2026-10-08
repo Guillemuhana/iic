@@ -39,6 +39,7 @@ export default function ScanFlow() {
   const [amountPhoto, setAmountPhoto] = useState(null);
   const [amountBusy, setAmountBusy] = useState(false);
   const saveInFlight = useRef(false);
+  const readingInFlight = useRef(false);
   const timer = useRef();
   const urls = useRef(new Set());
 
@@ -65,6 +66,13 @@ export default function ScanFlow() {
   };
 
   const read = async (prepared = pending) => {
+    if (!prepared || readingInFlight.current) return;
+    if (prepared.quality.blockingIssues?.length) {
+      setError(prepared.quality.blockingIssues.join(' '));
+      setStage('check');
+      return;
+    }
+    readingInFlight.current = true;
     setStage('reading');
     setError(null);
     setStep(0);
@@ -105,6 +113,7 @@ export default function ScanFlow() {
       setError(e.message);
       setStage('check');
     } finally {
+      readingInFlight.current = false;
       clearInterval(timer.current);
     }
   };
@@ -211,7 +220,7 @@ export default function ScanFlow() {
   return (
     <div className="min-h-full bg-paper">
       <header className="safe-top sticky top-0 z-20 flex items-center gap-3 border-b border-mist bg-white/95 px-4 pb-3 backdrop-blur">
-        <button onClick={back} className="grid size-10 place-items-center rounded-xl hover:bg-fog" aria-label="Volver">
+        <button onClick={back} disabled={stage === 'reading' || saving} className="grid size-10 place-items-center rounded-xl hover:bg-fog disabled:opacity-40" aria-label="Volver">
           <ArrowLeft className="size-5" />
         </button>
         <div className="min-w-0 flex-1">
@@ -250,7 +259,7 @@ export default function ScanFlow() {
                 <Button variant="outline" size="lg" icon={CameraIcon} onClick={() => setStage('camera')}>Repetir foto</Button>
                 <Button variant="outline" size="lg" icon={RotateCw} onClick={rotatePending}>Girar</Button>
                 <Button variant="outline" className="col-span-2" onClick={() => setCropping(true)}>Recortar y acercar el documento</Button>
-                <Button size="lg" icon={error ? RefreshCcw : ScanText} className="col-span-2" onClick={() => read()}>
+                <Button size="lg" disabled={Boolean(pending.quality.blockingIssues?.length)} icon={error ? RefreshCcw : ScanText} className="col-span-2" onClick={() => read()}>
                   {error ? 'Reintentar lectura' : 'Escanear esta foto'}
                 </Button>
               </div>
@@ -289,7 +298,7 @@ export default function ScanFlow() {
 
       {stage === 'review' && (
         <>
-          <div className="mx-auto grid max-w-6xl gap-6 px-4 pb-36 pt-5 lg:grid-cols-[1.1fr_1fr]">
+          <fieldset disabled={saving} className="mx-auto grid min-w-0 max-w-6xl gap-6 px-4 pb-36 pt-5 lg:grid-cols-[1.1fr_1fr]">
             <aside className="space-y-4">
               <div className="lg:sticky lg:top-24">
                 <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
@@ -363,7 +372,7 @@ export default function ScanFlow() {
                 </span>
               </button>
             </div>
-          </div>
+          </fieldset>
           <div className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-mist bg-white/95 px-4 pt-3 backdrop-blur">
             <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3">
               <div className="min-w-0 flex-1">
