@@ -1,7 +1,4 @@
-// Lectura del ticket con Groq (modelo de visión) en dos pasadas:
-//  1) Transcripción literal de todo el texto visible (OCR).
-//  2) Extracción estructurada a JSON usando la imagen + la transcripción.
-// Hacerlo en dos pasos reduce mucho los errores en números y montos.
+// Two independent visual readings: structured document + financial verification.
 
 import { HttpError } from './supabase.js';
 import { verifyAmount } from '../../shared/amount-verification.js';
@@ -10,28 +7,11 @@ const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 export const VISION_MODEL = () => process.env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b';
 
-const OCR_PROMPT = `Sos un sistema de OCR de alta precisión. La foto es de un documento de un instituto de investigación clínica de Córdoba (Argentina):
-puede ser el recibo de reintegro de viáticos (formulario con "Recibí la suma de", "En concepto de reintegro de viáticos", "correspondiente al estudio"),
-un ticket de gasto (combustible, peaje, taxi, comida) o un comprobante de transferencia (Mercado Pago, banco).
-La foto puede estar girada: leela en la orientación correcta.
-Transcribí TODO el texto visible, impreso y manuscrito, línea por línea.
-Reglas:
-- Copiá números y códigos EXACTAMENTE (importes, códigos de estudio como "I8F-MC-GPLL", visitas como "V19", fechas, n.º de operación).
-- El símbolo manuscrito $ no es un dígito: no lo leas como 4 ni lo pegues al importe. No confundas 1/4, 3/8 ni 4/7; si no se distinguen, escribí [?].
-- En las casillas SI / NO indicá cuál está encerrada o marcada, ej: "Recibe viático: [SI]".
-- No transcribas firmas: escribí [FIRMA].
-- Si un carácter es ilegible escribí [?].
-Respondé solo con la transcripción en texto plano.`;
-
-const EXTRACT_PROMPT = (ocr, estudios = []) => `Analizá la imagen y la transcripción OCR. Extraé los datos en JSON.
-
-TRANSCRIPCIÓN OCR:
-"""
-${ocr}
-"""
+const EXTRACT_PROMPT = (estudios = []) => `Analizá directamente la imagen. Orientá mentalmente el documento y extraé los datos en JSON. Transcribí texto impreso y manuscrito en texto_leido, sin transcribir firmas. Si un dígito es ambiguo, escribí [?] y dejá el importe en null. El signo $ no es un dígito 4.
 ${estudios.length ? `\nESTUDIOS ACTIVOS DEL INSTITUTO (el código manuscrito casi seguro es uno de estos): ${estudios.join(', ')}\n` : ''}
 Devolvé SOLO un objeto JSON con estas claves (null si no aparece; nunca inventes):
 {
+  "texto_leido": "transcripción literal del texto visible, impreso y manuscrito; [FIRMA] en lugar de firmas",
   "tipo_documento": "recibo_viatico | comprobante_gasto | comprobante_transferencia | otro  (el documento principal de la foto)",
   "rotacion": 0 | 90 | 180 | 270,   // grados en sentido horario para que el texto quede derecho
   "recibo": {                        // solo si aparece el recibo de reintegro de viáticos
@@ -60,7 +40,7 @@ Devolvé SOLO un objeto JSON con estas claves (null si no aparece; nunca invente
 Reglas:
 - Una misma foto puede tener el recibo y además un ticket de gasto asomando: completá "recibo" y "gastos".
 - Importes argentinos: punto = miles, coma = decimales. "$ 12.345" => 12345. "12345,00" => 12345. Devolvé números JSON.
-- No copies un importe dudoso del OCR sin verificarlo en la imagen. El símbolo $ no representa el dígito 4. Si los dígitos manuscritos son ambiguos, total=null.
+- Leé el importe directamente en la imagen, nunca lo deduzcas del contexto. El símbolo $ no representa el dígito 4. Si los dígitos manuscritos son ambiguos, total=null.
 - El total del recibo se lee únicamente en "Recibí la suma de"; un ticket adjunto con TOTAL es un gasto, nunca reemplaza ni se suma al total del recibo. Si hay =, conservá el importe de la derecha, sin sumar ambos lados.
 - Códigos de estudio manuscritos: cuidado con I/1, 8/B, 0/O, G/6, L/1. Si hay estudios activos, usá el que coincida.
 - Si en Aclaración escribieron el nombre completo, devolvé SOLO las iniciales.
@@ -132,17 +112,6 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
   const deadline = Date.now() + 52000;
   const image = { type: 'image_url', image_url: { url: dataUrl } };
 
-  const ocrRaw = await callGroq({
-    model,
-    temperature: 0,
-    max_completion_tokens: 2048,
-    messages: [{ role: 'user', content: [{ type: 'text', text: OCR_PROMPT }, image] }],
-  }, { deadline });
-  const ocr = cleanModelText(ocrRaw);
-  if (!ocr || ocr.length < 8) {
-    throw new HttpError(422, 'No se detectó texto en la foto. Acercá el teléfono al documento, con buena luz, y volvé a sacarla.');
-  }
-
   let data;
   let lastError;
   for (let i = 0; i < 2 && !data; i++) {
@@ -150,12 +119,12 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
       const out = await callGroq({
         model,
         temperature: 0,
-        max_completion_tokens: 3072,
+        max_completion_tokens: 2048,
         // 2º intento sin JSON mode: algunos modelos fallan la validación estricta y el parser tolerante lo resuelve.
         ...(i === 0 ? { response_format: { type: 'json_object' } } : {}),
         messages: [
           { role: 'system', content: 'Respondés únicamente con JSON válido, sin texto adicional.' },
-          { role: 'user', content: [{ type: 'text', text: EXTRACT_PROMPT(ocr, estudios) }, image] },
+          { role: 'user', content: [{ type: 'text', text: EXTRACT_PROMPT(estudios) }, image] },
         ],
       }, { deadline });
       data = parseJsonLoose(out);
@@ -164,11 +133,13 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
     }
   }
   if (!data) throw new HttpError(502, lastError?.message || 'No se pudo interpretar el ticket.');
+  const ocr = cleanModelText(data.texto_leido || '');
+  if (ocr.length < 8) throw new HttpError(422, 'No se detectó texto suficiente. Repetí la foto más cerca del papel.');
   let amountReview = null;
   if (data.recibo || data.transferencia) {
     try {
-      const output = await callGroq({ model, temperature: 0, max_completion_tokens: 2048,
-        ...(model.startsWith('qwen/') ? { reasoning_effort: 'low', reasoning_format: 'hidden' } : {}),
+      const output = await callGroq({ model, temperature: 0, max_completion_tokens: 768,
+        response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: [
           { type: 'text', text: `Verificá SOLO el monto principal de esta imagen, sin inventar dígitos. Orientá mentalmente el papel y mirá cada dígito de la línea manuscrita. El símbolo $ no es un dígito 4: no lo agregues al monto. En un recibo de viáticos leé el campo "Recibí la suma de": si hay un resultado explícito después de =, usá ese resultado, no sumes cifras ni uses el ticket adjunto. En una transferencia leé el monto transferido, no saldo ni comisión. Separador argentino: punto miles, coma decimales. Si hay tachaduras o dígitos ambiguos, monto=null y confianza menor a 0.5. Respondé únicamente JSON: {"monto": número o null, "literal": "solo la expresión del importe sin datos personales", "confianza": número entre 0 y 1}.` },
           { type: 'image_url', image_url: { url: originalImage } },
@@ -178,9 +149,10 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
       amountReview = verifyAmount(data.recibo?.total ?? data.transferencia?.monto, check.monto,
         data.recibo?.monto_detalle, check.confianza);
       amountReview.status = check.monto == null ? 'unreadable' : 'checked';
-    } catch {
+    } catch (err) {
       amountReview = verifyAmount(data.recibo?.total ?? data.transferencia?.monto, null, data.recibo?.monto_detalle);
       amountReview.status = 'unavailable';
+      amountReview.unavailableReason = err instanceof HttpError ? err.message : 'No se pudo interpretar la comprobación del importe.';
     }
     if (!amountReview.confirmed) {
       data.confianza = { ...data.confianza, total: 0.4 };
