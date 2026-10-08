@@ -24,7 +24,7 @@ export default handler(['POST'], async (req) => {
   const estudios = (estudiosCfg?.lista || []).filter(Boolean);
 
   const started = Date.now();
-  const { data, ocr, model, amountReview } = await readTicket(image, { estudios, originalImage });
+  const { data, ocr, model, amountReview } = await readTicket(image, { estudios, originalImage, amountRegion: body.amountRegion });
   const doc = normalizeDocument(data, { estudios });
   // Never prefill a financial total that the independent reading could not verify.
   // Both raw candidates remain in amountReview for the person to compare.

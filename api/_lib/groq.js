@@ -7,6 +7,24 @@ import { parseAmount } from '../../shared/ticket-rules.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
+export const AMOUNT_DIGITS_PROMPT = `Leé esta línea de un recibo o transferencia. Primero identificá el campo y transcribí cada dígito manuscrito por separado, de izquierda a derecha, sin completar por contexto. Conservá puntos, comas y el signo =. El $ no es un 4. Si hay =, el importe final está a la derecha. En caracteres manuscritos, distinguí curvas abiertas de círculos cerrados; no agregues un trazo que no esté visible. Devolvé JSON: {"campo":"recibo|transferencia|otro", "literal":"expresión del importe sin datos personales", "digitos_finales":["cada dígito de la cifra final en orden; ? si es ambiguo"], "monto_texto":"importe final o null si un dígito es ambiguo", "ambiguo":true|false, "confianza":0.0}. No transcribas nombres ni firmas. Si no se ve la etiqueta del campo o se ve un ticket de gasto, campo=otro. Nunca uses un gasto adjunto como importe del recibo.`;
+
+export function validateDigitReading(reading) {
+  if (!Array.isArray(reading?.digitos_finales)) return { ...reading, monto_texto: null, confianza: 0, ambiguo: true };
+  const digits = reading.digitos_finales;
+  const textDigits = String(reading.monto_texto ?? '').replace(/\D/g, '');
+  const valid = reading.ambiguo === false && digits.length > 0 && digits.length <= 14
+    && digits.every(d => typeof d === 'string' && /^\d$/.test(d)) && digits.join('') === textDigits;
+  return valid ? reading : { ...reading, monto_texto: null, confianza: 0, ambiguo: true };
+}
+
+async function readAmountDigits(url, deadline) {
+  return validateDigitReading(parseJsonLoose(await callGroq({ model: VISION_MODEL(), reasoning_effort: 'none', temperature: 0,
+    max_completion_tokens: 768, response_format: { type: 'json_object' },
+    messages: [{ role: 'user', content: [{ type: 'text', text: AMOUNT_DIGITS_PROMPT }, { type: 'image_url', image_url: { url } }] }],
+  }, { retries: 0, deadline })));
+}
+
 export const VISION_MODEL = () => process.env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b';
 
 const EXTRACT_PROMPT = (estudios = []) => `Analizá directamente la imagen. Orientá mentalmente el documento y extraé los datos en JSON. Transcribí texto impreso y manuscrito en texto_leido, sin transcribir firmas. Si un dígito es ambiguo, escribí [?] y dejá el importe en null. El signo $ no es un dígito 4.
@@ -57,7 +75,7 @@ export function rateLimitDelay(header, remaining) {
   const seconds = Number(header);
   if (!Number.isFinite(seconds) || seconds <= 0) return null;
   const delay = Math.ceil(seconds * 1000) + 250;
-  return delay <= 20000 && remaining > delay + 3000 ? delay : null;
+  return delay <= 40000 && remaining > delay + 3000 ? delay : null;
 }
 
 async function callGroq(body, { retries = 1, deadline = Date.now() + 45000 } = {}) {
@@ -130,7 +148,7 @@ export function parseJsonLoose(text) {
 /**
  * @param {string} dataUrl imagen en data URL (image/jpeg base64)
  */
-export async function readTicket(dataUrl, { estudios = [], originalImage = dataUrl } = {}) {
+export async function readTicket(dataUrl, { estudios = [], originalImage = dataUrl, amountRegion = null } = {}) {
   const model = VISION_MODEL();
   const deadline = Date.now() + 52000;
   // Preserve ink colour and faint strokes; contrast is a supporting view, not a replacement.
@@ -142,8 +160,9 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
     try {
       const out = await callGroq({
         model,
+        reasoning_effort: 'none',
         temperature: 0,
-        max_completion_tokens: 2048,
+        max_completion_tokens: 1536,
         // 2º intento sin JSON mode: algunos modelos fallan la validación estricta y el parser tolerante lo resuelve.
         ...(i === 0 ? { response_format: { type: 'json_object' } } : {}),
         messages: [
@@ -164,9 +183,17 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
   if (data.recibo || data.transferencia) {
     try {
       let amountImage = { url: originalImage, focused: false };
-      try { amountImage = await prepareAmountImage(originalImage, data.importe_bbox, data.rotacion); } catch { /* Invalid crop: use original. */ }
+      const located = Boolean(data.recibo && Array.isArray(amountRegion) && amountRegion.length === 4
+        && amountRegion.every(n => Number.isFinite(n) && n >= 0 && n <= 1000)
+        && amountRegion[2] > amountRegion[0] && amountRegion[3] > amountRegion[1]
+        && (amountRegion[2] - amountRegion[0]) * (amountRegion[3] - amountRegion[1]) < 650000);
+      const region = located ? amountRegion : data.importe_bbox;
+      const regionRotation = located ? 0 : data.rotacion;
+      if (located) data.rotacion = 0; // Printed label was recognized after the client made it upright.
+      try { amountImage = await prepareAmountImage(originalImage, region, regionRotation); } catch { /* Invalid crop: use original. */ }
       const amountPrompt = `Leé exclusivamente el campo de importe en esta imagen. Está ampliado; mirá cada dígito sin inventar. El símbolo $ no es 4. Si hay =, el total es la cifra de la derecha, sin sumar ambos lados. Un ticket de gasto no es un recibo de viáticos. Devolvé los importes como TEXTO, conservando punto de miles y coma decimal: no los conviertas a números JSON. Si no se ve la etiqueta o los dígitos son ambiguos, monto_texto=null y confianza menor a 0.5. Respondé JSON: {"campo":"recibo|transferencia|otro", "monto_texto":"cifra final literal sin símbolo $ o null", "literal":"solo la expresión completa del importe sin datos personales", "confianza": número entre 0 y 1}.`;
       const checkImage = async (url) => {
+      if (amountImage.focused) return readAmountDigits(url, deadline);
       const output = await callGroq({ model, temperature: 0, max_completion_tokens: 768,
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: [
@@ -185,7 +212,7 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
       if (check.campo && check.campo !== expectedField) amountReview.confirmed = false;
       if (check.literal && !verifyAmount(candidate, candidate, check.literal, check.confianza).confirmed) amountReview.confirmed = false;
       if (!amountReview.confirmed && amountImage.focused && candidate != null && check.campo === expectedField) {
-        const contrast = await prepareAmountImage(originalImage, data.importe_bbox, data.rotacion, true);
+        const contrast = await prepareAmountImage(originalImage, region, regionRotation, true);
         const other = await checkImage(contrast.url);
         const agreement = verifyVisualReadings(check, other, expectedField);
         if (agreement.confirmed && other.campo === expectedField && typeof check.literal === 'string' && check.literal.length < 160) {
@@ -212,12 +239,9 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
 export async function rereadAmount(image, field) {
   const deadline = Date.now() + 42000;
   const model = VISION_MODEL();
-  const color = await prepareAmountImage(image, null, 0);
-  const contrast = await prepareAmountImage(image, null, 0, true);
-  const prompt = `Transcribí únicamente el importe de este recorte. Incluye la etiqueta del campo. El signo $ no es un 4. Si hay =, conservá la expresión completa y tomá solo el resultado a la derecha. Nunca sumes importes ni uses el TOTAL de un ticket adjunto como importe de un recibo. Devolvé JSON: {"campo":"recibo|transferencia|otro", "monto_texto":"importe literal con separadores argentinos o null", "literal":"expresión completa del importe, sin nombres ni firmas", "confianza":0.0}. Si no se reconoce la etiqueta o cualquier dígito es dudoso, monto_texto=null. Leé cada dígito visualmente, sin completar por contexto.`;
-  const read = async (url) => parseJsonLoose(await callGroq({ model, temperature: 0, max_completion_tokens: 512,
-    response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url } }] }],
-  }, { retries: 0, deadline }));
+  const color = await prepareAmountImage(image, null, 0, false, true);
+  const contrast = await prepareAmountImage(image, null, 0, true, true);
+  const read = (url) => readAmountDigits(url, deadline);
   // Sequential calls respect limited free-tier request quotas.
   const first = await read(color.url);
   const second = await read(contrast.url);

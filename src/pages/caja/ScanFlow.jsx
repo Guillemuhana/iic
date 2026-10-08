@@ -14,9 +14,10 @@ import { api, uploadTicketImage } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { money, dateAR, todayISO } from '../../lib/format';
+import { locateReceipt } from '../../lib/receipt-locator';
 import { checkTicket, emptyTicket, mergeDocument } from '../../../shared/ticket-rules.js';
 
-const READING_STEPS = ['Mejorando la imagen', 'Leyendo texto impreso y manuscrito', 'Verificando el importe por separado', 'Ubicando firma y datos personales'];
+const READING_STEPS = ['Orientando el recibo y ubicando el importe', 'Leyendo texto impreso y manuscrito', 'Verificando cada cifra del importe', 'Ubicando firma y datos personales'];
 const DOC_LABEL = { recibo_viatico: 'Recibo de viáticos', comprobante_gasto: 'Ticket de gasto', comprobante_transferencia: 'Transferencia', otro: 'Documento' };
 
 export default function ScanFlow() {
@@ -73,7 +74,12 @@ export default function ScanFlow() {
     clearInterval(timer.current);
     timer.current = setInterval(() => setStep((s) => Math.min(s + 1, READING_STEPS.length - 1)), 1700);
     try {
-      const r = await api('scan-ticket', { body: { image: prepared.aiDataUrl, originalImage: prepared.originalDataUrl } });
+      const located = await locateReceipt(prepared.blob).catch(() => null);
+      if (located?.rotation) {
+        prepared = track(await prepareTicketImage(located.canvas));
+        setPending(prepared);
+      }
+      const r = await api('scan-ticket', { body: { image: prepared.aiDataUrl, originalImage: prepared.originalDataUrl, amountRegion: located?.bbox } });
       const photo = {
         id: crypto.randomUUID(),
         img: prepared,

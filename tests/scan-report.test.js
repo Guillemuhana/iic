@@ -30,7 +30,7 @@ test('Conflicting full-page total is corrected only when two focused readings an
     let calls = 0;
     globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(calls++ === 0
       ? { texto_leido: 'Recibo con monto manuscrito', importe_bbox: [100, 200, 800, 500], recibo: { total: 452057, monto_detalle: '$452.057' } }
-      : { campo: 'recibo', monto_texto: '163.934', literal: '$152.034 = $163.934', confianza: .95 }) } }] }) });
+      : { campo: 'recibo', monto_texto: '163.934', digitos_finales: ['1', '6', '3', '9', '3', '4'], ambiguo: false, literal: '$152.034 = $163.934', confianza: .95 }) } }] }) });
     const result = await readTicket(image);
     assert.equal(calls, 3);
     assert.equal(result.amountReview.corrected, true);
@@ -39,7 +39,7 @@ test('Conflicting full-page total is corrected only when two focused readings an
     calls = 0;
     globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(calls++ === 0
       ? { texto_leido: 'Recibo con monto manuscrito', importe_bbox: [100, 200, 800, 500], recibo: { total: 452057 } }
-      : { campo: 'recibo', monto_texto: calls === 2 ? '163.934' : '163.984', literal: '$163.934', confianza: .95 }) } }] }) });
+      : { campo: 'recibo', monto_texto: calls === 2 ? '163.934' : '163.984', digitos_finales: ['1', '6', '3', '9', '3', '4'], ambiguo: false, literal: '$163.934', confianza: .95 }) } }] }) });
     const disagreement = await readTicket(image);
     assert.equal(disagreement.amountReview.confirmed, false);
     assert.notEqual(disagreement.amountReview.corrected, true);
@@ -103,6 +103,7 @@ test('Focused checks require both literal expressions and the correct money fiel
 
 test('Rate-limit waits respect provider hints and the server deadline', () => {
   assert.equal(rateLimitDelay('2', 10000), 2250);
+  assert.equal(rateLimitDelay('32', 52000), 32250);
   assert.equal(rateLimitDelay('60', 52000), null);
   assert.equal(rateLimitDelay('2', 3000), null);
   assert.equal(rateLimitDelay(null, 52000), null);
@@ -132,7 +133,7 @@ test('Selected-region rereading uses no previous guesses and returns no unverifi
     globalThis.fetch = async (_url, options) => {
       assert.ok(!JSON.stringify(JSON.parse(options.body).messages).includes('163934'));
       calls++;
-      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ campo: 'recibo', monto_texto: disagree && calls % 2 === 0 ? '163.984' : '163.934', literal: '$163.934', confianza: .95 }) } }] }) };
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ campo: 'recibo', monto_texto: disagree && calls % 2 === 0 ? '163.984' : '163.934', digitos_finales: ['1', '6', '3', '9', '3', '4'], ambiguo: false, literal: '$163.934', confianza: .95 }) } }] }) };
     };
     const result = await rereadAmount(image, 'recibo');
     assert.equal(result.amount, null);

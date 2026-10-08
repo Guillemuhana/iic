@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 
-export async function prepareAmountImage(dataUrl, bbox, rotation = 0, enhanced = false) {
+export async function prepareAmountImage(dataUrl, bbox, rotation = 0, enhanced = false, selectedLine = false) {
   const bytes = Buffer.from(dataUrl.split(',')[1] || '', 'base64');
   let image = sharp(bytes, { limitInputPixels: 12000000 });
   const { width, height } = await image.metadata();
@@ -19,8 +19,10 @@ export async function prepareAmountImage(dataUrl, bbox, rotation = 0, enhanced =
     }
   }
   if ([90, 180, 270].includes(rotation)) image.rotate(rotation);
-  image.resize({ width: 1600, height: focused ? 600 : 2000, fit: 'inside', withoutEnlargement: !focused });
+  const line = focused || selectedLine;
+  image.resize({ width: line ? 1800 : 1600, height: line ? 600 : 2000, fit: 'inside', withoutEnlargement: !line });
   if (enhanced) image.grayscale().normalise();
-  const output = await image.jpeg({ quality: 95 }).toBuffer();
+  if (line) image.extend({ top: 30, bottom: 30, left: 30, right: 30, background: '#ffffff' });
+  const output = await image.jpeg({ quality: line ? 98 : 95 }).toBuffer();
   return { url: `data:image/jpeg;base64,${output.toString('base64')}`, focused };
 }

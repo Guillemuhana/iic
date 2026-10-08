@@ -48,6 +48,34 @@ El usuario eligió continuar con Groq gratis. No activar motores adicionales sin
 una nueva instrucción. El recorte ampliado queda visible junto a los candidatos
 para facilitar la revisión de cada cifra.
 
+## Mejora posterior con Groq gratuito
+
+Se agregó Tesseract.js local para reconocer exclusivamente la etiqueta impresa
+`Recibí la suma de` y sus coordenadas, no para completar cifras manuscritas.
+Prueba las orientaciones 0/90/270/180, con un límite de 20 segundos y fallback
+al lector previo si no ubica la etiqueta. Descarga modelos gratuitos; la imagen
+se procesa en el dispositivo y el texto local no se guarda ni se envía.
+
+El recorte del campo se amplía a 1800 píxeles con margen blanco. Groq transcribe
+cada dígito en una lista, además del monto y su expresión literal. Cualquier
+`?`, ambigüedad o discrepancia entre la lista de dígitos y el monto exige revisión.
+Se usa modo instruct (`reasoning_effort=none`) y se ajustan las esperas a la cuota.
+
+Prueba real con la foto original girada y sin recorte manual: el OCR local encontró
+la línea y la orientó; la extracción general propuso **163984**, las lecturas por
+dígitos ampliadas coincidieron en **163934** y corrigieron el total a **163934**.
+Esto es un acierto en un documento, no una tasa de precisión demostrada. Se mantiene
+la confirmación humana y falta medir más fotos y cámaras reales.
+
+También se probó la preparación exacta en Chrome: orientación **270°**, región
+**[75,331,985,403]**, y lectura final de Groq **163934**. El reconocimiento local
+solo efectuó descargas GET de recursos, sin transmitir la imagen.
+
+Para repetir la prueba contra la app publicada, con orientación/localización:
+`node scripts/benchmark-scan.mjs 'ruta-al-recibo.jpg' 163934 0 locate`.
+
+Documentación de OCR local: https://github.com/naptha/tesseract.js/blob/master/docs/api.md
+
 ## Medición reproducible
 
 `scripts/benchmark-scan.mjs` recibe una foto, el importe correcto conocido y una
