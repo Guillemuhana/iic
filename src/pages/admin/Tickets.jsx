@@ -1,6 +1,7 @@
+import { useNavigate } from 'react-router-dom';
 import { loadingBounds } from '../../../shared/ticket-stats.js';
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Download, Receipt, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Download, Receipt, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button, Card, Empty, Spinner, StatusBadge, useToast, cx, IS_DEMO } from '../../components/ui';
 import PeriodPicker, { presetRange } from '../../components/PeriodPicker';
@@ -12,6 +13,7 @@ const PAGE = 50;
 
 export default function Tickets() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [period, setPeriod] = useState({ preset: 'mes', ...presetRange('mes') });
   const [status, setStatus] = useState('todos');
   const [q, setQ] = useState('');
@@ -76,6 +78,7 @@ export default function Tickets() {
     <div className="mx-auto max-w-7xl">
       <PageHead title="Recibos de viáticos" text="Todos los reintegros por fecha de carga en Argentina. Tocá uno para ver las fotos, corregirlo o anularlo."
         actions={<>
+          <Button variant="accent" icon={Camera} onClick={() => navigate('/caja/escanear')}>Escanear recibo</Button>
           <Button variant="outline" icon={Download} onClick={exportCsv}>Exportar CSV</Button>
         </>} />
 

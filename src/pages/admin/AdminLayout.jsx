@@ -1,21 +1,26 @@
 import { useEffect, useState } from 'react';
 import { instituteClock } from '../../../shared/institute-clock.js';
-import { NavLink, Outlet, Link } from 'react-router-dom';
-import { BarChart3, Receipt, Send, Users, Settings, Camera, LogOut, CalendarDays } from 'lucide-react';
+import { NavLink, Outlet } from 'react-router-dom';
+import { BarChart3, Receipt, Send, Users, Settings, LogOut, CalendarDays, Menu, X } from 'lucide-react';
 import { Logo, InstituteMark, cx } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 
-const NAV = [
-  { to: '/panel', end: true, label: 'Estadísticas', icon: BarChart3 },
-  { to: '/panel/turnos', label: 'Turnos', icon: CalendarDays },
-  { to: '/panel/comprobantes', label: 'Recibos', icon: Receipt },
-  { to: '/panel/envios', label: 'Envíos a contadora', icon: Send },
-  { to: '/panel/usuarios', label: 'Usuarios', icon: Users },
-  { to: '/panel/configuracion', label: 'Configuración', icon: Settings },
+const NAV_GROUPS = [
+  { label: 'Resumen', items: [{ to: '/panel', end: true, label: 'Estadísticas', icon: BarChart3 }] },
+  { label: 'Gestión', items: [
+    { to: '/panel/comprobantes', label: 'Recibos', icon: Receipt },
+    { to: '/panel/envios', label: 'Envíos a contadora', icon: Send },
+    { to: '/panel/turnos', label: 'Turnos', icon: CalendarDays },
+  ] },
+  { label: 'Administración', items: [
+    { to: '/panel/usuarios', label: 'Usuarios', icon: Users },
+    { to: '/panel/configuracion', label: 'Configuración', icon: Settings },
+  ] },
 ];
 
 export default function AdminLayout() {
   const { profile, signOut } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const refresh = () => setNow(new Date());
@@ -28,19 +33,19 @@ export default function AdminLayout() {
     <div className="admin-shell min-h-full lg:grid lg:grid-cols-[272px_1fr]">
       <aside className="admin-sidebar petrol-hero hidden text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
         <div className="px-5 pb-7 pt-7"><Logo light full className="admin-sidebar-logo !w-full" /></div>
-        <nav className="flex-1 space-y-1 px-3">
-          {NAV.map(({ to, end, label, icon: Icon }) => (
-            <NavLink key={to} to={to} end={end}
-              className={({ isActive }) => cx('admin-nav-link flex items-center gap-3 rounded-xl px-3 py-3 text-[14.5px] font-medium transition-colors',
-                isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10 hover:text-white')}>
-              <Icon className="size-[18px]" /> {label}
-            </NavLink>
+        <nav aria-label="Menú principal" className="scrollbar-thin min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-4">
+          {NAV_GROUPS.map(group => (
+            <div key={group.label}>
+              <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.15em] text-white/45">{group.label}</p>
+              <div className="space-y-1">{group.items.map(({ to, end, label, icon: Icon }) => (
+                <NavLink key={to} to={to} end={end} className={({ isActive }) => cx('admin-nav-link flex items-center gap-3 rounded-xl px-3 py-3 text-[14.5px] font-medium transition-colors', isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10 hover:text-white')}>
+                  <Icon className="size-[18px]" /> {label}
+                </NavLink>
+              ))}</div>
+            </div>
           ))}
         </nav>
         <div className="space-y-3 p-4">
-          <Link to="/caja/escanear" className="admin-scan-button flex items-center justify-center gap-2 rounded-xl bg-saline px-3 py-2.5 text-sm font-bold text-white hover:bg-saline-dark">
-            <Camera className="size-4" /> Escanear recibo
-          </Link>
           <div className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5">
             <div className="grid size-9 place-items-center rounded-full bg-white/15 text-sm font-bold">
               {(profile?.full_name || profile?.email || '?').slice(0, 1).toUpperCase()}
@@ -59,18 +64,16 @@ export default function AdminLayout() {
         <div className="flex items-center justify-between gap-3 px-4 pb-3">
           <InstituteMark light small section="Panel de administración" />
           <div className="flex gap-1">
-            <Link to="/caja" className="grid size-10 place-items-center rounded-xl bg-white/10" aria-label="Escanear"><Camera className="size-5" /></Link>
+            <button onClick={() => setMenuOpen(!menuOpen)} className="grid size-10 place-items-center rounded-xl bg-white/10" aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'} aria-expanded={menuOpen} aria-controls="admin-mobile-menu">{menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}</button>
             <button onClick={signOut} className="grid size-10 place-items-center rounded-xl bg-white/10" aria-label="Cerrar sesión"><LogOut className="size-5" /></button>
           </div>
         </div>
-        <nav className="scrollbar-thin flex gap-1 overflow-x-auto px-3 pb-3">
-          {NAV.map(({ to, end, label }) => (
-            <NavLink key={to} to={to} end={end}
-              className={({ isActive }) => cx('shrink-0 rounded-lg px-3 py-1.5 text-[13px] font-semibold', isActive ? 'bg-white text-petrol' : 'text-white/75')}>
-              {label}
-            </NavLink>
-          ))}
-        </nav>
+        {menuOpen && <nav id="admin-mobile-menu" aria-label="Menú principal móvil" className="scrollbar-thin max-h-[60vh] space-y-4 overflow-y-auto px-4 pb-4">
+          {NAV_GROUPS.map(group => <div key={group.label}>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-white/45">{group.label}</p>
+            <div className="grid gap-1 sm:grid-cols-2">{group.items.map(({ to, end, label, icon: Icon }) => <NavLink key={to} to={to} end={end} onClick={() => setMenuOpen(false)} className={({isActive}) => cx('flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold',isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10')}><Icon className="size-4" />{label}</NavLink>)}</div>
+          </div>)}
+        </nav>}
         <time dateTime={now.toISOString()} className="block px-4 pb-3 text-xs capitalize text-white/75">{clock.date} · {clock.time} h (Argentina)</time>
       </header>
 
