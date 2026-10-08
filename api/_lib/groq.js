@@ -17,6 +17,7 @@ La foto puede estar girada: leela en la orientación correcta.
 Transcribí TODO el texto visible, impreso y manuscrito, línea por línea.
 Reglas:
 - Copiá números y códigos EXACTAMENTE (importes, códigos de estudio como "I8F-MC-GPLL", visitas como "V19", fechas, n.º de operación).
+- El símbolo manuscrito $ no es un dígito: no lo leas como 4 ni lo pegues al importe. No confundas 1/4, 3/8 ni 4/7; si no se distinguen, escribí [?].
 - En las casillas SI / NO indicá cuál está encerrada o marcada, ej: "Recibe viático: [SI]".
 - No transcribas firmas: escribí [FIRMA].
 - Si un carácter es ilegible escribí [?].
@@ -39,7 +40,7 @@ Devolvé SOLO un objeto JSON con estas claves (null si no aparece; nunca invente
     "paciente_iniciales": "iniciales escritas en Aclaración, ej FA",
     "paciente_numero": "número de paciente escrito junto a las iniciales en Aclaración, ej 1023",
     "fecha": "dd/mm/aaaa del campo Fecha",
-    "monto_detalle": "lo escrito en 'Recibí la suma de' tal cual, ej '$152.034 = $163.934'",
+    "monto_detalle": "solo lo escrito en 'Recibí la suma de', preservando separadores y el signo = si aparece",
     "total": número final recibido (si hay una cuenta, el resultado después del '='),
     "adjunta_comprobantes": true | false | null,   // opción SI/NO encerrada
     "recibe_viatico": true | false | null,
@@ -58,7 +59,9 @@ Devolvé SOLO un objeto JSON con estas claves (null si no aparece; nunca invente
 
 Reglas:
 - Una misma foto puede tener el recibo y además un ticket de gasto asomando: completá "recibo" y "gastos".
-- Importes argentinos: punto = miles, coma = decimales. "$ 163.934" => 163934. "146034,00" => 146034. Devolvé números JSON.
+- Importes argentinos: punto = miles, coma = decimales. "$ 12.345" => 12345. "12345,00" => 12345. Devolvé números JSON.
+- No copies un importe dudoso del OCR sin verificarlo en la imagen. El símbolo $ no representa el dígito 4. Si los dígitos manuscritos son ambiguos, total=null.
+- El total del recibo se lee únicamente en "Recibí la suma de"; un ticket adjunto con TOTAL es un gasto, nunca reemplaza ni se suma al total del recibo. Si hay =, conservá el importe de la derecha, sin sumar ambos lados.
 - Códigos de estudio manuscritos: cuidado con I/1, 8/B, 0/O, G/6, L/1. Si hay estudios activos, usá el que coincida.
 - Si en Aclaración escribieron el nombre completo, devolvé SOLO las iniciales.
 - "datos_personales" son datos del PACIENTE o de terceros que hay que tapar en la foto por privacidad:
@@ -164,18 +167,20 @@ export async function readTicket(dataUrl, { estudios = [], originalImage = dataU
   let amountReview = null;
   if (data.recibo || data.transferencia) {
     try {
-      const output = await callGroq({ model, temperature: 0, max_completion_tokens: 512,
-        response_format: { type: 'json_object' },
+      const output = await callGroq({ model, temperature: 0, max_completion_tokens: 2048,
+        ...(model.startsWith('qwen/') ? { reasoning_effort: 'low', reasoning_format: 'hidden' } : {}),
         messages: [{ role: 'user', content: [
-          { type: 'text', text: `Verificá SOLO el monto principal de esta imagen, sin inventar dígitos. En un recibo de viáticos leé el campo "Recibí la suma de": si hay un resultado explícito después de =, usá ese resultado, no sumes cifras ni uses el ticket adjunto. En una transferencia leé el monto transferido, no saldo ni comisión. Separador argentino: punto miles, coma decimales. Si hay tachaduras o dígitos ambiguos, monto=null y confianza menor a 0.5. Respondé JSON: {"monto": número o null, "literal": "solo la expresión del importe sin datos personales", "confianza": número entre 0 y 1}.` },
+          { type: 'text', text: `Verificá SOLO el monto principal de esta imagen, sin inventar dígitos. Orientá mentalmente el papel y mirá cada dígito de la línea manuscrita. El símbolo $ no es un dígito 4: no lo agregues al monto. En un recibo de viáticos leé el campo "Recibí la suma de": si hay un resultado explícito después de =, usá ese resultado, no sumes cifras ni uses el ticket adjunto. En una transferencia leé el monto transferido, no saldo ni comisión. Separador argentino: punto miles, coma decimales. Si hay tachaduras o dígitos ambiguos, monto=null y confianza menor a 0.5. Respondé únicamente JSON: {"monto": número o null, "literal": "solo la expresión del importe sin datos personales", "confianza": número entre 0 y 1}.` },
           { type: 'image_url', image_url: { url: originalImage } },
         ] }],
       }, { retries: 0, deadline });
       const check = parseJsonLoose(output);
       amountReview = verifyAmount(data.recibo?.total ?? data.transferencia?.monto, check.monto,
         data.recibo?.monto_detalle, check.confianza);
+      amountReview.status = check.monto == null ? 'unreadable' : 'checked';
     } catch {
       amountReview = verifyAmount(data.recibo?.total ?? data.transferencia?.monto, null, data.recibo?.monto_detalle);
+      amountReview.status = 'unavailable';
     }
     if (!amountReview.confirmed) {
       data.confianza = { ...data.confianza, total: 0.4 };

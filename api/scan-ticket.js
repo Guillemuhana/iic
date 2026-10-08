@@ -26,6 +26,12 @@ export default handler(['POST'], async (req) => {
   const started = Date.now();
   const { data, ocr, model, amountReview } = await readTicket(image, { estudios, originalImage });
   const doc = normalizeDocument(data, { estudios });
+  // Never prefill a financial total that the independent reading could not verify.
+  // Both raw candidates remain in amountReview for the person to compare.
+  if (amountReview && !amountReview.confirmed) {
+    if (doc.recibo) doc.recibo.total = null;
+    if (doc.transferencia) doc.transferencia.monto = null;
+  }
 
   // El texto leído se guarda sin datos personales
   const raw_text = maskPersonalText(ocr, doc.datos_personales.map((d) => d.texto).filter(Boolean), [instituto?.cuit].filter(Boolean));
