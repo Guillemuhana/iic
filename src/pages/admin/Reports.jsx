@@ -5,9 +5,9 @@ import { supabase } from '../../lib/supabase';
 import { api } from '../../lib/api';
 import { Button, Card, Empty, Spinner, Badge, Field, useToast, cx } from '../../components/ui';
 import { PageHead } from './AdminLayout';
-import { money, dateAR, dateTimeAR, todayISO, startOfMonth, hourCordoba, SEND_HOUR } from '../../lib/format';
+import { money, dateAR, dateTimeAR, todayISO, startOfMonth, nextWeeklySend } from '../../lib/format';
 
-const KIND = { automatico: 'Automático 20 h', reenvio: 'Reenvío', manual: 'Manual', cierre: 'Cierre de caja' };
+const KIND = { automatico: 'Semanal viernes 12 h', reenvio: 'Reenvío', manual: 'Manual', cierre: 'Cierre de caja' };
 
 export default function Reports() {
   const toast = useToast();
@@ -28,7 +28,7 @@ export default function Reports() {
     setReports(r.data || []);
     setPending({ count: p.data?.length || 0, total: (p.data || []).reduce((a, t) => a + Number(t.total), 0) });
     const m = Object.fromEntries((s.data || []).map((x) => [x.key, x.value]));
-    setContadora(m.contadora || {});
+    setContadora({ ...(m.contadora || {}), email: m.contadora?.email || 'estudiocaballerosalva@gmail.com' });
     setAutoOn(m.envio_automatico?.activo !== false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -42,13 +42,13 @@ export default function Reports() {
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   };
 
-  const nextSend = hourCordoba() < SEND_HOUR ? `Hoy a las ${SEND_HOUR}:00` : `Mañana a las ${SEND_HOUR}:00`;
+  const nextSend = nextWeeklySend();
   const lastError = reports?.find((r) => r.trigger_kind === 'automatico')?.status === 'error';
 
   return (
     <div className="mx-auto max-w-6xl">
       <PageHead title="Envíos a la contadora"
-        text="La secretaría solo escanea. Todos los días a las 20 h el sistema le manda a la contadora un email con los recibos cargados ese día, la planilla Excel y las fotos con los datos tapados." />
+        text="La secretaría solo escanea. Los viernes a las 12:00 el sistema le manda a la contadora un reporte de lo cargado durante la semana, la planilla Excel y las fotos con los datos tapados." />
 
       <Card className="overflow-hidden">
         <div className="grid gap-0 md:grid-cols-[1.3fr_1fr]">
@@ -62,9 +62,9 @@ export default function Reports() {
               {!autoOn ? (
                 <>Mientras esté pausado no se envía nada. Activalo en <Link to="/panel/configuracion" className="font-semibold text-petrol-3 underline">Configuración</Link>.</>
               ) : pending.count ? (
-                <>Va a incluir <b className="text-ink">{pending.count} recibo{pending.count === 1 ? '' : 's'}</b> por <b className="text-ink tabular-nums">{money(pending.total)}</b>. Si hay recibos de días anteriores sin enviar, salen en un email por cada día.</>
+                <>Va a incluir <b className="text-ink">{pending.count} recibo{pending.count === 1 ? '' : 's'}</b> por <b className="text-ink tabular-nums">{money(pending.total)}</b>. Los pendientes anteriores se incluyen en el mismo reporte.</>
               ) : (
-                <>Por ahora no hay recibos pendientes. Si un día no se carga nada, no se envía email.</>
+                <>Por ahora no hay recibos pendientes. Si no hay recibos en el período ni pendientes anteriores, no se envía email.</>
               )}
             </p>
             {lastError && <p className="mt-3 rounded-lg bg-lesion-soft px-3 py-2 text-[13px] text-lesion">El último envío automático falló. Se reintenta solo en el próximo envío; revisá el detalle en el historial.</p>}

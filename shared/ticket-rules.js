@@ -199,10 +199,7 @@ export function normalizeDocument(raw = {}, { estudios = [] } = {}) {
       recibe_viatico: bool(r.recibe_viatico),
       desayuno: bool(r.desayuno),
     };
-    if (recibo.total === null && recibo.monto_detalle) {
-      const amounts = recibo.monto_detalle.match(/\d[\d.,]*/g) || [];
-      recibo.total = parseAmount(amounts[amounts.length - 1]);
-    }
+    // Never fill an unreadable total by guessing from handwritten arithmetic.
   }
 
   const gastos = (Array.isArray(raw.gastos) ? raw.gastos : [])
@@ -294,10 +291,10 @@ export function mergeDocument(ticket, doc) {
 export function checkTicket(t) {
   const out = [];
   const today = new Date();
-  if (t.total === null || t.total === undefined || Number.isNaN(Number(t.total))) {
+  if (t.total === null || t.total === undefined || !Number.isFinite(Number(t.total))) {
     out.push({ field: 'total', level: 'error', message: 'Falta el importe recibido.' });
   } else if (Number(t.total) <= 0) {
-    out.push({ field: 'total', level: 'warn', message: 'El importe es cero o negativo.' });
+    out.push({ field: 'total', level: 'error', message: 'El importe debe ser mayor que cero.' });
   }
   if (!t.estudio) out.push({ field: 'estudio', level: 'warn', message: 'Falta el estudio.' });
   if (!t.visita) out.push({ field: 'visita', level: 'warn', message: 'Falta la visita (ej. V19).' });

@@ -57,7 +57,7 @@ export function Badge({ tone = 'neutral', children, className }) {
 }
 
 export const STATUS = {
-  cargado: { label: 'Se envía a las 20 h', short: 'Por enviar', tone: 'warn' },
+  cargado: { label: 'Se envía el viernes a las 12 h', short: 'Por enviar', tone: 'warn' },
   enviado: { label: 'Enviado a contadora', short: 'Enviado', tone: 'ok' },
   anulado: { label: 'Anulado', short: 'Anulado', tone: 'error' },
 };

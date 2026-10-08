@@ -15,12 +15,16 @@ export default handler(['POST'], async (req) => {
     throw new HttpError(400, 'Mandá la foto como imagen JPEG, PNG o WebP.');
   }
   if (image.length > 4_200_000) throw new HttpError(413, 'La foto es demasiado pesada. Volvé a sacarla.');
+  const originalImage = body.originalImage || image;
+  if (!/^data:image\/(jpeg|png|webp);base64,/.test(originalImage) || (body.originalImage && image.length + originalImage.length > 4_200_000)) {
+    throw new HttpError(413, 'Las imágenes son demasiado pesadas o inválidas. Repetí la foto.');
+  }
 
   const [estudiosCfg, instituto] = await Promise.all([getSetting('estudios'), getSetting('instituto')]);
   const estudios = (estudiosCfg?.lista || []).filter(Boolean);
 
   const started = Date.now();
-  const { data, ocr, model } = await readTicket(image, { estudios });
+  const { data, ocr, model, amountReview } = await readTicket(image, { estudios, originalImage });
   const doc = normalizeDocument(data, { estudios });
 
   // El texto leído se guarda sin datos personales
@@ -62,6 +66,7 @@ export default handler(['POST'], async (req) => {
     duplicate,
     confidence,
     fieldConfidence,
+    amountReview,
     observaciones: data.observaciones || null,
     raw_text,
     model,

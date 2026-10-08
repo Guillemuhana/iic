@@ -3,7 +3,7 @@ import { sendAccountantReport } from './_lib/report.js';
 
 export const config = { maxDuration: 60 };
 
-// El envío normal es AUTOMÁTICO (api/cron-daily.js, todos los días a las 20 h).
+// El envío normal es AUTOMÁTICO (api/cron-daily.js, viernes a las 12:00).
 // Este endpoint queda solo para el administrador, para reenviar un período
 // a la contadora (por ejemplo, si perdió un email).
 // POST { from: 'aaaa-mm-dd', to: 'aaaa-mm-dd' }

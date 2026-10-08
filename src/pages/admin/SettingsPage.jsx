@@ -14,7 +14,7 @@ export default function SettingsPage() {
       const m = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
       setS({
         instituto: m.instituto || { nombre: '', responsable: '' },
-        contadora: { nombre: '', email: '', ...(m.contadora || {}), ccText: (m.contadora?.cc || []).join(', ') },
+        contadora: { nombre: '', ...(m.contadora || {}), email: m.contadora?.email || 'estudiocaballerosalva@gmail.com', ccText: (m.contadora?.cc || []).join(', ') },
         envio_automatico: m.envio_automatico || { activo: true },
         estudiosText: (m.estudios?.lista || []).join('\n'),
       });
@@ -60,8 +60,8 @@ export default function SettingsPage() {
           <label className="mt-5 flex items-start gap-3">
             <input type="checkbox" className="mt-1 size-4 accent-[#123A5A]" checked={s.envio_automatico.activo !== false} onChange={up('envio_automatico', 'activo')} />
             <span>
-              <span className="font-medium">Envío automático diario a las 20 h</span>
-              <span className="block text-sm text-slate">Cada noche se manda un email con los recibos que cargó la secretaría ese día. Si un día no se cargó nada, no se envía. Destildalo solo para pausar los envíos.</span>
+              <span className="font-medium">Envío semanal los viernes a las 12:00</span>
+              <span className="block text-sm text-slate">Un reporte desde el viernes anterior a las 12:00 hasta este viernes a las 12:00, con resumen, totales, Excel, CSV y fotos. Incluye pendientes anteriores. Destildalo solo para pausar los envíos.</span>
             </span>
           </label>
         </Card>

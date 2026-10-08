@@ -1,3 +1,4 @@
+export { nextWeeklySend } from '../../shared/report-schedule.js';
 const TZ = 'America/Argentina/Cordoba';
 
 export const money = (n, opts = {}) =>
@@ -55,4 +56,4 @@ export const longDayAR = (iso) => {
 /** Hora actual en Córdoba (0–23) */
 export const hourCordoba = () => Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
 
-export const SEND_HOUR = 20;
+export const SEND_HOUR = 12;

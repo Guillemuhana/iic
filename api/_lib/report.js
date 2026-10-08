@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { weeklyWindow } from '../../shared/report-schedule.js';
 import nodemailer from 'nodemailer';
 import { supabaseAdmin, getSetting, HttpError } from './supabase.js';
 
@@ -23,9 +24,10 @@ export function todayCordoba() {
  * @param {string} [opts.kind] manual | cierre | automatico
  * @param {string[]} [opts.ticketIds] envío de tickets puntuales
  */
-export async function sendAccountantReport({ mode = 'pendientes', from, to, sentBy = null, kind = 'manual', ticketIds, day } = {}) {
+export async function sendAccountantReport({ mode = 'pendientes', from, to, sentBy = null, kind = 'manual', ticketIds, day, weekly } = {}) {
   const sb = supabaseAdmin();
-  const contadora = (await getSetting('contadora')) || {};
+  const contadora = { ...((await getSetting('contadora')) || {}) };
+  contadora.email = process.env.ACCOUNTANT_EMAIL || contadora.email || 'estudiocaballerosalva@gmail.com';
   const instituto = (await getSetting('instituto')) || {};
   const recipients = [contadora.email, ...(contadora.cc || [])].map((e) => String(e || '').trim()).filter(Boolean);
   if (!recipients.length) throw new HttpError(400, 'Configurá el email de la contadora en Configuración antes de enviar.');
@@ -36,26 +38,37 @@ export async function sendAccountantReport({ mode = 'pendientes', from, to, sent
     .neq('status', 'anulado')
     .order('fecha_comprobante', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true });
-  if (ticketIds?.length) q = q.in('id', ticketIds);
+  if (weekly) q = q.lt('created_at', weekly.end).or(`created_at.gte.${weekly.start},status.eq.cargado`);
+  else if (ticketIds?.length) q = q.in('id', ticketIds);
   else if (mode === 'pendientes') q = q.eq('status', 'cargado');
   if (from) q = q.gte('fecha_comprobante', from);
   if (to) q = q.lte('fecha_comprobante', to);
 
-  const { data: tickets, error } = await q.limit(5000);
-  if (error) throw new HttpError(500, error.message);
+  // Fetch every row: Supabase defaults to 1000 per request.
+  const tickets = [];
+  q = q.order('id', { ascending: true });
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await q.range(offset, offset + 999);
+    if (error) throw new HttpError(500, error.message);
+    tickets.push(...data);
+    if (data.length < 1000) break;
+  }
+  tickets.sort((a, b) => (a.estudio || '').localeCompare(b.estudio || '', 'es')
+    || (a.created_at || '').localeCompare(b.created_at || '') || a.id.localeCompare(b.id));
   if (!tickets.length) return { sent: false, reason: 'No hay tickets para enviar en ese criterio.', count: 0 };
 
-  const total = tickets.reduce((a, t) => a + Number(t.total || 0), 0);
+  const total = tickets.reduce((a, t) => a + Math.round(Number(t.total || 0) * 100), 0) / 100;
   const dates = tickets.map((t) => t.fecha_comprobante).filter(Boolean).sort();
-  // `day` = día de carga (envío automático diario): el período es ese día.
-  const periodFrom = day || from || dates[0] || todayCordoba();
-  const periodTo = day || to || dates[dates.length - 1] || todayCordoba();
+  // Weekly periods use the loading cutoff, not the receipt date.
+  const periodFrom = weekly?.from || day || from || dates[0] || todayCordoba();
+  const periodTo = weekly?.to || day || to || dates[dates.length - 1] || todayCordoba();
 
   // Links firmados a las fotos (válidos 30 días)
   const paths = [...new Set(tickets.flatMap(pathsOf))];
   const signed = {};
   if (paths.length) {
-    const { data: urls } = await sb.storage.from('tickets').createSignedUrls(paths, 60 * 60 * 24 * 30);
+    const { data: urls, error: linksError } = await sb.storage.from('tickets').createSignedUrls(paths, 60 * 60 * 24 * 30);
+    if (linksError || urls?.some((u) => !u.signedUrl)) throw new HttpError(500, 'No se pudieron generar todos los enlaces a las fotos.');
     (urls || []).forEach((u) => { if (u.signedUrl) signed[u.path] = u.signedUrl; });
   }
 
@@ -64,10 +77,10 @@ export async function sendAccountantReport({ mode = 'pendientes', from, to, sent
 
   const nombreInst = instituto.nombre || 'Instituto de Investigaciones Clínicas de Córdoba';
   const periodo = periodFrom === periodTo ? fmtDate(periodFrom) : `${fmtDate(periodFrom)} al ${fmtDate(periodTo)}`;
-  const subject = day
+  const subject = weekly ? `${nombreInst} — Reporte semanal de reintegros ${periodo} (${tickets.length})` : day
     ? `${nombreInst} — Reintegros de viáticos del ${periodo} (${tickets.length})`
     : `${nombreInst} — Reintegros de viáticos ${periodo} (${tickets.length})`;
-  const html = buildEmailHtml({ tickets, total, periodo, nombreInst, contadora });
+  const html = buildEmailHtml({ tickets, total, periodo, nombreInst, contadora, weekly });
 
   // Registro del envío
   const { data: report, error: rErr } = await sb
@@ -99,10 +112,12 @@ export async function sendAccountantReport({ mode = 'pendientes', from, to, sent
   }
 
   const now = new Date().toISOString();
-  await sb.from('email_reports').update({ status: 'enviado' }).eq('id', report.id);
+  const { error: reportError } = await sb.from('email_reports').update({ status: 'enviado' }).eq('id', report.id);
+  if (reportError) throw new HttpError(500, 'El email se envió pero no se pudo registrar: ' + reportError.message);
   const ids = tickets.filter((t) => t.status === 'cargado').map((t) => t.id);
   for (let i = 0; i < ids.length; i += 500) {
-    await sb.from('tickets').update({ status: 'enviado', sent_at: now, report_id: report.id }).in('id', ids.slice(i, i + 500));
+    const { error } = await sb.from('tickets').update({ status: 'enviado', sent_at: now, report_id: report.id }).in('id', ids.slice(i, i + 500));
+    if (error) throw new HttpError(500, 'El email se envió pero no se pudo actualizar el estado de los recibos: ' + error.message);
   }
 
   return { sent: true, count: tickets.length, total, reportId: report.id, recipients };
@@ -145,8 +160,9 @@ const COLUMNS = [
   { header: 'Foto 2', key: 'foto2', width: 9 },
   { header: 'Foto 3', key: 'foto3', width: 9 },
   { header: 'Foto 4', key: 'foto4', width: 9 },
+  { header: 'Fecha y hora de carga (Argentina)', key: 'cargado', width: 24 },
 ];
-const LAST_COL = 'S';
+const LAST_COL = 'T';
 const TOTAL_COL = 'N';
 
 function row(t, signed) {
@@ -169,6 +185,7 @@ function row(t, signed) {
     total: Number(t.total || 0),
     operador: t.profiles?.full_name || t.profiles?.email || '',
     foto1: link(0), foto2: link(1), foto3: link(2), foto4: link(3),
+    cargado: t.created_at ? new Intl.DateTimeFormat('es-AR', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' }).format(new Date(t.created_at)) : '',
   };
 }
 
@@ -180,7 +197,7 @@ export async function buildWorkbook({ tickets, signed, instituto, periodFrom, pe
   const ws = wb.addWorksheet('Reintegros', { views: [{ state: 'frozen', ySplit: 4 }] });
   ws.mergeCells(`A1:${LAST_COL}1`);
   ws.getCell('A1').value = instituto.nombre || 'Instituto de Investigaciones Clínicas de Córdoba';
-  ws.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF10323F' } };
+  ws.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF123A5A' } };
   ws.mergeCells(`A2:${LAST_COL}2`);
   ws.getCell('A2').value = `Reintegros de viáticos del ${fmtDate(periodFrom)} al ${fmtDate(periodTo)} — ${tickets.length} recibos — Total ${money(total)}`;
   ws.getCell('A2').font = { size: 11, color: { argb: 'FF4A5D66' } };
@@ -189,7 +206,7 @@ export async function buildWorkbook({ tickets, signed, instituto, periodFrom, pe
   const header = ws.getRow(4);
   COLUMNS.forEach((c, i) => { header.getCell(i + 1).value = c.header; });
   header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10323F' } };
+  header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF123A5A' } };
   header.alignment = { vertical: 'middle' };
   header.height = 20;
 
@@ -212,10 +229,13 @@ export async function buildWorkbook({ tickets, signed, instituto, periodFrom, pe
   // Resumen por medio de pago y obra social
   const rs = wb.addWorksheet('Resumen');
   rs.columns = [{ width: 28 }, { width: 14 }, { width: 18 }];
+  rs.addRow(['TOTAL DEL REPORTE', tickets.length, total]).font = { bold: true, size: 12 };
+  rs.getCell('C1').numFmt = '"$"#,##0.00';
+  rs.addRow([]);
   const block = (title, groups) => {
     const h = rs.addRow([title, 'Cantidad', 'Total']);
     h.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    h.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10323F' } };
+    h.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF123A5A' } };
     Object.entries(groups).sort((a, b) => b[1].total - a[1].total).forEach(([k, v]) => {
       const r = rs.addRow([k, v.count, v.total]);
       r.getCell(3).numFmt = '"$"#,##0.00';
@@ -232,6 +252,21 @@ export async function buildWorkbook({ tickets, signed, instituto, periodFrom, pe
   block('Paciente (estudio · iniciales n.º)', group((t) => `${t.estudio || '—'} · ${[t.paciente_iniciales, t.paciente_numero].filter(Boolean).join(' ') || 'Sin dato'}`));
   block('Medio de pago', group((t) => t.medio_pago || 'Sin dato'));
 
+  const fotos = wb.addWorksheet('Fotos y comprobantes');
+  fotos.columns = [{ header: 'Estudio', key: 'estudio', width: 22 }, { header: 'Paciente', key: 'paciente', width: 20 }, { header: 'Visita', key: 'visita', width: 12 }, { header: 'Foto', key: 'foto', width: 12 }, { header: 'Enlace (30 días)', key: 'link', width: 28 }];
+  fotos.views = [{ state: 'frozen', ySplit: 1 }];
+  fotos.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  fotos.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF123A5A' } };
+  for (const t of tickets) pathsOf(t).forEach((path, index) => {
+    const r = fotos.addRow({ estudio: t.estudio || '', paciente: [t.paciente_iniciales, t.paciente_numero].filter(Boolean).join(' '), visita: t.visita || '', foto: index + 1, link: signed[path] ? { text: 'Abrir foto tapada', hyperlink: signed[path] } : 'Sin enlace' });
+    r.getCell('link').font = { color: { argb: 'FF0065B3' }, underline: true };
+  });
+  // Alternating rows and print layout keep the detailed ledger readable.
+  ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, printTitlesRow: '1:4' };
+  for (let i = 5; i <= last; i++) {
+    if (i % 2) ws.getRow(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F5FA' } };
+    ws.getRow(i).alignment = { vertical: 'middle', wrapText: true };
+  }
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
@@ -252,7 +287,7 @@ export function buildCsv(tickets) {
   return '\uFEFF' + lines.join('\r\n');
 }
 
-export function buildEmailHtml({ tickets, total, periodo, nombreInst, contadora }) {
+export function buildEmailHtml({ tickets, total, periodo, nombreInst, contadora, weekly }) {
   const byEstudio = tickets.reduce((acc, t) => {
     const k = t.estudio || 'Sin estudio';
     acc[k] = acc[k] || { n: 0, total: 0 };
@@ -266,7 +301,7 @@ export function buildEmailHtml({ tickets, total, periodo, nombreInst, contadora 
       <td style="padding:7px 0;border-top:1px solid #E3EAED;text-align:center;font-size:13px;color:#5B6E75">${v.n}</td>
       <td style="padding:7px 0;border-top:1px solid #E3EAED;text-align:right;font-size:13px;color:#17262C;white-space:nowrap">${money(v.total)}</td></tr>`)
     .join('');
-  const preview = tickets.slice(0, 20).map((t) => `
+  const preview = tickets.slice(0, 30).map((t) => `
     <tr>
       <td style="padding:8px 6px 8px 0;border-top:1px solid #E3EAED;font-family:Menlo,Consolas,monospace;font-size:12.5px;color:#17262C">${escapeHtml(t.estudio || '—')}</td>
       <td style="padding:8px 6px;border-top:1px solid #E3EAED;font-family:Menlo,Consolas,monospace;font-size:12.5px;color:#17262C">${escapeHtml(t.visita || '—')}</td>
@@ -274,34 +309,34 @@ export function buildEmailHtml({ tickets, total, periodo, nombreInst, contadora 
       <td style="padding:8px 0 8px 6px;border-top:1px solid #E3EAED;text-align:right;font-size:13px;color:#17262C;white-space:nowrap">${money(t.total)}</td>
     </tr>`).join('');
   const host = process.env.PUBLIC_APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '');
-  const logo = host ? `<img src="${host}/logo-iic-blanco.png" alt="" width="132" style="display:block;margin:0 0 16px">` : '';
+  const logo = host ? `<img src="${host}/logo01.png" alt="" width="240" style="display:block;max-width:100%;background:#fff;border-radius:8px;padding:10px;margin:0 0 16px">` : '';
   const saludo = contadora.nombre ? `Hola ${escapeHtml(contadora.nombre)},` : 'Hola,';
   return `<!doctype html><html><body style="margin:0;background:#EEF3F4;font-family:Arial,Helvetica,sans-serif">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#EEF3F4;padding:28px 12px"><tr><td align="center">
   <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden">
-    <tr><td style="background:#0F3440;padding:26px 30px 24px;color:#ffffff">
+    <tr><td style="background:#123A5A;padding:26px 30px 24px;color:#ffffff">
       ${logo}
       <div style="font-family:Georgia,'Times New Roman',serif;font-size:15px;letter-spacing:1.5px;text-transform:uppercase;color:#ffffff">${escapeHtml(nombreInst)}</div>
       <div style="height:1px;background:rgba(255,255,255,.18);margin:14px 0"></div>
-      <div style="font-size:13px;color:rgba(255,255,255,.7)">Reintegros de viáticos a pacientes</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.7)">Reporte de reintegros de viáticos</div>
       <div style="font-size:22px;font-weight:bold;margin-top:2px">${periodo}</div>
     </td></tr>
     <tr><td style="padding:26px 30px 8px;color:#17262C;font-size:14px;line-height:1.6">
       <p style="margin:0 0 12px">${saludo}</p>
-      <p style="margin:0 0 20px">Te enviamos los recibos de viáticos que se cargaron en el sistema. Adjuntamos la planilla Excel, con el link a las fotos de cada recibo, sus tickets y la transferencia (con la firma y los datos personales del paciente tapados), y la versión CSV.</p>
+      <p style="margin:0 0 20px">Te enviamos el detalle organizado por estudio para revisar y conciliar los reintegros registrados. Adjuntamos la planilla Excel, con el link a las fotos de cada recibo, sus tickets y la transferencia (con la firma y los datos personales del paciente tapados), y la versión CSV.</p>
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#F6F8F8;border-radius:10px">
         <tr>
-          <td style="padding:16px 18px"><div style="font-size:12px;color:#5B6E75">Recibos</div><div style="font-size:26px;font-weight:bold;color:#0F3440">${tickets.length}</div></td>
-          <td style="padding:16px 18px;text-align:right"><div style="font-size:12px;color:#5B6E75">Total reintegrado</div><div style="font-size:26px;font-weight:bold;color:#0F3440">${money(total)}</div></td>
+          <td style="padding:16px 18px"><div style="font-size:12px;color:#5B6E75">Recibos</div><div style="font-size:26px;font-weight:bold;color:#123A5A">${tickets.length}</div></td>
+          <td style="padding:16px 18px;text-align:right"><div style="font-size:12px;color:#5B6E75">Total reintegrado</div><div style="font-size:26px;font-weight:bold;color:#123A5A">${money(total)}</div></td>
         </tr>
       </table>
       <div style="margin:22px 0 4px;font-size:12px;font-weight:bold;color:#5B6E75;letter-spacing:.5px">POR ESTUDIO</div>
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">${rowsEstudio}</table>
       <div style="margin:22px 0 4px;font-size:12px;font-weight:bold;color:#5B6E75;letter-spacing:.5px">DETALLE</div>
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">${preview}</table>
-      ${tickets.length > 20 ? `<p style="color:#5B6E75;font-size:12px;margin:10px 0 0">Y ${tickets.length - 20} recibos más en la planilla adjunta.</p>` : ''}
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr style="font-size:12px;color:#62666D;text-align:left"><th>Estudio</th><th>Visita</th><th>Paciente</th><th style="text-align:right">Importe</th></tr>${preview}</table>
+      ${tickets.length > 30 ? `<p style="color:#5B6E75;font-size:12px;margin:10px 0 0">Y ${tickets.length - 30} recibos más en la planilla adjunta.</p>` : ''}
     </td></tr>
-    <tr><td style="padding:22px 30px;color:#7A8C94;font-size:11.5px;line-height:1.5">Envío automático diario del sistema de comprobantes del ${escapeHtml(nombreInst)}. Por privacidad, el paciente figura solo con iniciales y número.</td></tr>
+    <tr><td style="padding:22px 30px;color:#7A8C94;font-size:11.5px;line-height:1.5">${weekly ? 'Cierre semanal: desde el viernes anterior a las 12:00 hasta este viernes a las 12:00 (Argentina). Incluye pendientes anteriores si los hay.' : 'Reporte solicitado por administración.'} Los enlaces a las fotos vencen a los 30 días. Sistema de comprobantes del ${escapeHtml(nombreInst)}. Por privacidad, el paciente figura solo con iniciales y número.</td></tr>
   </table></td></tr></table></body></html>`;
 }
 
@@ -309,28 +344,14 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-/** Día (aaaa-mm-dd) en Córdoba de un timestamp. */
-const dayOf = (ts) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(ts));
-
-/**
- * Envío automático: manda a la contadora UN email por cada día de carga que
- * tenga recibos pendientes (normalmente solo el de hoy; si un envío anterior
- * falló, se ponen al día los días atrasados, cada uno por separado).
- */
-export async function sendDailyReports() {
+/** One consolidated weekly report, including overdue unsent receipts. */
+export async function sendWeeklyReport(now = new Date()) {
+  const weekly = weeklyWindow(now);
   const sb = supabaseAdmin();
-  const { data, error } = await sb.from('tickets').select('id, created_at').eq('status', 'cargado').order('created_at').limit(5000);
+  const { data: previous, error } = await sb.from('email_reports').select('id')
+    .eq('trigger_kind', 'automatico').eq('period_from', weekly.from).eq('period_to', weekly.to)
+    .eq('status', 'enviado').limit(1);
   if (error) throw new HttpError(500, error.message);
-  if (!data.length) return { sent: false, reason: 'No hay recibos pendientes.', days: [] };
-  const byDay = data.reduce((acc, t) => { (acc[dayOf(t.created_at)] ||= []).push(t.id); return acc; }, {});
-  const days = [];
-  for (const [d, ids] of Object.entries(byDay).sort()) {
-    try {
-      const r = await sendAccountantReport({ ticketIds: ids, day: d, kind: 'automatico' });
-      days.push({ day: d, ...r });
-    } catch (err) {
-      days.push({ day: d, sent: false, error: err.message });
-    }
-  }
-  return { sent: days.some((x) => x.sent), days };
+  if (previous.length) return { sent: false, reason: 'El reporte semanal ya fue enviado.', reportId: previous[0].id };
+  return sendAccountantReport({ mode: 'rango', weekly, kind: 'automatico' });
 }

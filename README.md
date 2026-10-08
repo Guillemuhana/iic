@@ -4,7 +4,7 @@ Sistema de carga de **recibos de reintegro de viáticos** de los pacientes de es
 
 - **Administración** (celular): escanea el recibo y, en el mismo registro, los tickets de gastos adjuntos y el comprobante de transferencia. La IA lee estudio, visita (ej. V19), iniciales + n.º de paciente, importe, casillas SI/NO y comprobantes; la persona revisa y guarda.
 - **Privacidad**: antes de guardar, se tapa la firma del paciente y sus datos personales (nombre, dirección, DNI, CUIT/CUIL, CBU/CVU/alias, teléfono, email) en todas las fotos. Solo se almacena la foto tapada.
-- **Contadora**: recibe **automáticamente todos los días a las 20 h** un email con los recibos que la secretaría cargó ese día: resumen por estudio, planilla Excel + CSV y link a las fotos tapadas. La secretaría solo escanea; no tiene que enviar nada. Si un día no se carga nada, no sale email. Si un envío falla, los recibos quedan pendientes y salen al día siguiente, en un email por cada día.
+- **Contadora**: recibe todos los viernes a las 12:00 de Argentina un reporte a **estudiocaballerosalva@gmail.com**. El corte va de viernes 12:00 a viernes 12:00, por fecha de carga (no fecha del recibo). Incluye todo lo cargado en ese intervalo, excepto anulados, y pendientes anteriores si hubo errores. Excel ordenado por estudio con resumen y todas las fotos tapadas, CSV y email con totales. Sin recibos no se envía.
 - **Admin (Dr. Pautasso)**: panel con estadísticas, listado completo, edición/anulación, reenvíos, usuarios y configuración.
 
 Stack: React + Vite + Tailwind · Supabase (Auth, Postgres con RLS, Storage) · Funciones serverless en Vercel (`/api`) · Groq (modelo de visión) · SMTP (Gmail u otro).
@@ -57,9 +57,9 @@ En **Settings → Environment Variables** cargá todas las de `.env.example`:
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | funciones `/api` |
 | `GROQ_API_KEY`, `GROQ_VISION_MODEL` | lectura de tickets |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | email a contadora |
-| `CRON_SECRET` | protege el envío automático diario |
+| `CRON_SECRET` | protege el envío automático semanal |
 
-Redeploy. El cron de `vercel.json` (`0 23 * * *` = 20:00 Córdoba) dispara el envío diario. Desde Configuración se puede pausar, y desde Envíos el administrador puede reenviar un período si la contadora lo pide.
+Redeploy. El cron de `vercel.json` (`0 15 * * 5` = viernes 12:00 Argentina) dispara el envío semanal. Desde Configuración se puede pausar, y desde Envíos el administrador puede reenviar un período si la contadora lo pide.
 
 Último paso: entrá como admin → **Configuración**:
 - email de la contadora;
@@ -116,7 +116,7 @@ Los permisos se aplican en la base de datos (RLS), no solo en la interfaz. Los r
 api/                 funciones serverless (Vercel)
   scan-ticket.js     lectura de cada foto con Groq + ubicación de datos a tapar
   send-report.js     envío a la contadora (Excel + CSV)
-  cron-daily.js      envío automático diario
+  cron-daily.js      envío automático semanal
   users.js           alta y gestión de usuarios (admin)
   _lib/              supabase, groq, armado del reporte
 shared/              validaciones usadas por front y API
@@ -127,3 +127,5 @@ src/
 supabase/migrations  001 esquema base · 002 recibo de viáticos
 tests/               pruebas de validación
 ```
+
+La lectura compara el importe con una tercera pasada independiente sobre la imagen original. La persona debe revisar y confirmar el monto antes de guardar: las coincidencias de IA no garantizan exactitud. Configurar SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS y MAIL_FROM para habilitar el correo.

@@ -81,7 +81,7 @@ export default function Tickets() {
         <PeriodPicker value={period} onChange={setPeriod} />
         <select className="field !w-auto !py-2 text-[13px]" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Estado">
           <option value="todos">Todos los estados</option>
-          <option value="cargado">Por enviar (20 h)</option>
+          <option value="cargado">Por enviar (viernes 12 h)</option>
           <option value="enviado">Enviados</option>
           <option value="anulado">Anulados</option>
         </select>

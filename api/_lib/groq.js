@@ -4,6 +4,7 @@
 // Hacerlo en dos pasos reduce mucho los errores en números y montos.
 
 import { HttpError } from './supabase.js';
+import { verifyAmount } from '../../shared/amount-verification.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -66,14 +67,17 @@ Reglas:
   En un comprobante de transferencia, el destinatario es el paciente: tapá su nombre, banco/cuenta CBU/CVU/alias y CUIT/CUIL.
 - "bbox" en coordenadas de la imagen TAL COMO LA RECIBÍS (sin girarla), normalizadas de 0 a 1000: x1,y1 esquina superior izquierda, x2,y2 inferior derecha. Abarcá el dato completo con margen.`;
 
-async function callGroq(body, { retries = 2 } = {}) {
+async function callGroq(body, { retries = 1, deadline = Date.now() + 45000 } = {}) {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new HttpError(500, 'Falta GROQ_API_KEY en las variables de entorno.');
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      const remaining = deadline - Date.now();
+      if (remaining < 1000) throw new HttpError(504, 'La lectura tardó demasiado. Repetí con una foto más cercana y clara.');
       const r = await fetch(GROQ_URL, {
         method: 'POST',
+        signal: AbortSignal.timeout(Math.min(15000, remaining)),
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -120,8 +124,9 @@ export function parseJsonLoose(text) {
 /**
  * @param {string} dataUrl imagen en data URL (image/jpeg base64)
  */
-export async function readTicket(dataUrl, { estudios = [] } = {}) {
+export async function readTicket(dataUrl, { estudios = [], originalImage = dataUrl } = {}) {
   const model = VISION_MODEL();
+  const deadline = Date.now() + 52000;
   const image = { type: 'image_url', image_url: { url: dataUrl } };
 
   const ocrRaw = await callGroq({
@@ -129,7 +134,7 @@ export async function readTicket(dataUrl, { estudios = [] } = {}) {
     temperature: 0,
     max_completion_tokens: 2048,
     messages: [{ role: 'user', content: [{ type: 'text', text: OCR_PROMPT }, image] }],
-  });
+  }, { deadline });
   const ocr = cleanModelText(ocrRaw);
   if (!ocr || ocr.length < 8) {
     throw new HttpError(422, 'No se detectó texto en la foto. Acercá el teléfono al documento, con buena luz, y volvé a sacarla.');
@@ -149,12 +154,32 @@ export async function readTicket(dataUrl, { estudios = [] } = {}) {
           { role: 'system', content: 'Respondés únicamente con JSON válido, sin texto adicional.' },
           { role: 'user', content: [{ type: 'text', text: EXTRACT_PROMPT(ocr, estudios) }, image] },
         ],
-      });
+      }, { deadline });
       data = parseJsonLoose(out);
     } catch (err) {
       lastError = err;
     }
   }
   if (!data) throw new HttpError(502, lastError?.message || 'No se pudo interpretar el ticket.');
-  return { data, ocr, model };
+  let amountReview = null;
+  if (data.recibo || data.transferencia) {
+    try {
+      const output = await callGroq({ model, temperature: 0, max_completion_tokens: 512,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: [
+          { type: 'text', text: `Verificá SOLO el monto principal de esta imagen, sin inventar dígitos. En un recibo de viáticos leé el campo "Recibí la suma de": si hay un resultado explícito después de =, usá ese resultado, no sumes cifras ni uses el ticket adjunto. En una transferencia leé el monto transferido, no saldo ni comisión. Separador argentino: punto miles, coma decimales. Si hay tachaduras o dígitos ambiguos, monto=null y confianza menor a 0.5. Respondé JSON: {"monto": número o null, "literal": "solo la expresión del importe sin datos personales", "confianza": número entre 0 y 1}.` },
+          { type: 'image_url', image_url: { url: originalImage } },
+        ] }],
+      }, { retries: 0, deadline });
+      const check = parseJsonLoose(output);
+      amountReview = verifyAmount(data.recibo?.total ?? data.transferencia?.monto, check.monto,
+        data.recibo?.monto_detalle, check.confianza);
+    } catch {
+      amountReview = verifyAmount(data.recibo?.total ?? data.transferencia?.monto, null, data.recibo?.monto_detalle);
+    }
+    if (!amountReview.confirmed) {
+      data.confianza = { ...data.confianza, total: 0.4 };
+    }
+  }
+  return { data, ocr, model, amountReview };
 }

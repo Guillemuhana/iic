@@ -110,7 +110,7 @@ const toBlob = (canvas, q) => new Promise((ok) => canvas.toBlob(ok, 'image/jpeg'
 const toDataUrl = (canvas, q) => canvas.toDataURL('image/jpeg', q);
 
 /**
- * @returns {{ previewUrl, blob, aiDataUrl, quality: {sharpness, brightness, issues: string[]}, width, height }}
+ * @returns {{ previewUrl, blob, aiDataUrl, originalDataUrl, quality: {sharpness, brightness, issues: string[]}, width, height }}
  */
 export async function prepareTicketImage(source) {
   const bitmap = await loadBitmap(source);
@@ -125,13 +125,22 @@ export async function prepareTicketImage(source) {
   if (br > 235) issues.push('Hay mucho brillo o reflejo sobre el ticket.');
   if (Math.min(base.width, base.height) < 700) issues.push('La foto tiene poca resolución. Acercate más.');
 
-  // La IA recibe la versión mejorada; guardamos el color original como respaldo.
+  // Two independent inputs, capped below the serverless request limit.
   let aiDataUrl = toDataUrl(enhanced, 0.9);
-  if (aiDataUrl.length > 3_800_000) aiDataUrl = toDataUrl(enhanced, 0.75);
+  let originalDataUrl = toDataUrl(base, 0.88);
+  for (const quality of [0.8, 0.7, 0.6]) {
+    if (aiDataUrl.length + originalDataUrl.length <= 4_000_000) break;
+    aiDataUrl = toDataUrl(enhanced, quality);
+    originalDataUrl = toDataUrl(base, quality);
+  }
+  if (aiDataUrl.length + originalDataUrl.length > 4_000_000) {
+    aiDataUrl = toDataUrl(drawScaled(enhanced, 1600), 0.7);
+    originalDataUrl = toDataUrl(drawScaled(base, 1600), 0.7);
+  }
   const blob = await toBlob(base, 0.88);
   const previewUrl = URL.createObjectURL(blob);
 
-  return { previewUrl, blob, aiDataUrl, quality: { sharpness: sh, brightness: br, issues }, width: base.width, height: base.height };
+  return { previewUrl, blob, aiDataUrl, originalDataUrl, quality: { sharpness: sh, brightness: br, issues }, width: base.width, height: base.height };
 }
 
 /** Rota 90° una imagen ya preparada (por si el ticket quedó acostado). */

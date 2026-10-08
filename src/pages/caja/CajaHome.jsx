@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Button, Card, Empty, InstituteMark, Spinner, StatusBadge, cx } from '../../components/ui';
 import TicketDetail from '../../components/TicketDetail';
 import logoMonoWhite from '../../assets/logo-iic-mono-blanco.png';
-import { money, timeAR, todayISO, dateAR, addDays, longDayAR, hourCordoba, SEND_HOUR } from '../../lib/format';
+import { money, timeAR, todayISO, dateAR, addDays, longDayAR, nextWeeklySend } from '../../lib/format';
 
 export default function CajaHome() {
   const { profile, signOut, isAdmin } = useAuth();
@@ -36,7 +36,7 @@ export default function CajaHome() {
   const totalDia = visibles.reduce((a, t) => a + Number(t.total), 0);
   const mios = visibles.filter((t) => t.created_by === profile?.id).length;
   const isToday = day === todayISO();
-  const nextSend = hourCordoba() < SEND_HOUR ? `hoy a las ${SEND_HOUR}:00` : `mañana a las ${SEND_HOUR}:00`;
+  const nextSend = nextWeeklySend();
 
   return (
     <div className="min-h-full bg-paper pb-32">
