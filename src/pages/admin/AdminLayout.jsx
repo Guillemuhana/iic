@@ -35,7 +35,7 @@ export default function AdminLayout() {
   }, []);
   const clock = instituteClock(now);
   return (
-    <div className="admin-shell admin-rail-shell min-h-full">
+    <div className="admin-shell admin-rail-shell min-h-full" data-menu-expanded={expanded}>
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-mist bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
         <button onClick={() => setMenuOpen(value => !value)} className="admin-touch-menu grid size-11 shrink-0 place-items-center rounded-xl bg-fog text-petrol hover:bg-mist" aria-label={menuOpen ? 'Contraer menú' : 'Expandir menú'} aria-expanded={expanded} aria-controls="admin-rail"><Menu className="size-5" /></button>
         <div className="min-w-0 flex-1">
