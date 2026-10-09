@@ -68,6 +68,8 @@ Redeploy. El cron de `vercel.json` (`0 15 * * 5` = viernes 12:00 Argentina) disp
 
 ## 5. Desarrollo local
 
+La revisión diaria de recibos se ejecuta en `/api/cron-review` a las **08:00 de Argentina** (11:00 UTC), protegida por `CRON_SECRET`. Revalida los datos guardados de todos los recibos no anulados: campos obligatorios, dos fotos revisadas, coincidencia de importes y documentos de prueba. Guarda el resultado en `settings.revision_diaria` y lo muestra en el inicio de Administración. No relee imágenes con IA ni corrige o anula recibos. Los errores se consultan abriendo cada comprobante. Para activar este cron en producción se debe desplegar la configuración actualizada de Vercel.
+
 ```bash
 cp .env.example .env    # completá los valores
 npm install

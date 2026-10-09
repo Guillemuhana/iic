@@ -9,6 +9,10 @@
   ],
   "crons": [
     {
+      "path": "/api/cron-review",
+      "schedule": "0 11 * * *"
+    },
+    {
       "path": "/api/cron-daily",
       "schedule": "0 0 * * *"
     },

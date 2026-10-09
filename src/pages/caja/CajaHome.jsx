@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Button, Card, Empty, InstituteMark, Spinner, StatusBadge, cx } from '../../components/ui';
 import TicketDetail from '../../components/TicketDetail';
 import logoMonoWhite from '../../assets/logo-iic-mono-blanco.png';
-import { money, timeAR, todayISO, dateAR, addDays, longDayAR, nextWeeklySend } from '../../lib/format';
+import { money, timeAR, todayISO, dateAR, dateTimeAR, addDays, longDayAR, nextWeeklySend } from '../../lib/format';
 import { savedReimbursementError } from '../../../shared/save-validation.js';
 
 export default function CajaHome() {
@@ -17,16 +17,18 @@ export default function CajaHome() {
   const [pending, setPending] = useState({ count: 0, total: 0, review: 0 });
   const [autoOn, setAutoOn] = useState(true);
   const [schedule, setSchedule] = useState({});
+  const [review, setReview] = useState(null);
   const [open, setOpen] = useState(null);
   const [loadError, setLoadError] = useState(null);
 
   const load = useCallback(async () => {
     const start = new Date(day + 'T00:00:00-03:00').toISOString();
     const end = new Date(addDays(day, 1) + 'T00:00:00-03:00').toISOString();
-    const [daily, pendingResult, configResult] = await Promise.all([
+    const [daily, pendingResult, configResult, reviewResult] = await Promise.all([
       supabase.from('tickets').select('*, profiles:created_by(full_name)').gte('created_at', start).lt('created_at', end).order('created_at', { ascending: false }),
       supabase.from('tickets').select('*').eq('status', 'cargado'),
       supabase.from('settings').select('value').eq('key', 'envio_automatico').maybeSingle(),
+      supabase.from('settings').select('value').eq('key', 'revision_diaria').maybeSingle(),
     ]);
     if (daily.error || pendingResult.error) { setLoadError((daily.error || pendingResult.error).message); return; }
     setLoadError(null);
@@ -36,6 +38,7 @@ export default function CajaHome() {
     setPending({ count: eligible.length, total: eligible.reduce((a, t) => a + Number(t.total), 0), review: (pend || []).length - eligible.length });
     setAutoOn(cfg?.value?.activo !== false);
     setSchedule(cfg?.value || {});
+    setReview(reviewResult.error ? null : reviewResult.data?.value || null);
   }, [day]);
 
   useEffect(() => {
@@ -51,23 +54,28 @@ export default function CajaHome() {
   const mios = visibles.filter((t) => t.created_by === profile?.id).length;
   const isToday = day === todayISO();
   const nextSend = nextWeeklySend(new Date(), schedule);
+  const greetingName = profile?.email === 'administracion@iic.local'
+    ? 'Susana' : profile?.full_name?.trim().split(/\s+/)[0] || 'equipo';
 
   return (
     <div className="min-h-full bg-paper pb-32">
       <header className="petrol-hero safe-top relative overflow-hidden px-5 pb-10 text-white">
         <img src={logoMonoWhite} alt="" aria-hidden className="pointer-events-none absolute -right-8 top-10 h-56 w-auto opacity-[.06]" />
-        <div className="relative flex items-start justify-between gap-3 pt-2">
-          <InstituteMark light section="Recibos de viáticos" />
-          <div className="flex shrink-0 items-center gap-1">
+        <div className="relative pt-2">
+          <InstituteMark light fullWidth className="w-full" />
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <p className="text-xs text-white/70">Recibos de viáticos</p>
+            <div className="flex shrink-0 items-center gap-1">
             {isAdmin && (
               <Link to="/panel" className="grid size-10 place-items-center rounded-xl bg-white/10 hover:bg-white/15" aria-label="Panel de administración"><LayoutDashboard className="size-5" /></Link>
             )}
             <button onClick={signOut} className="grid size-10 place-items-center rounded-xl bg-white/10 hover:bg-white/15" aria-label="Cerrar sesión"><LogOut className="size-5" /></button>
+            </div>
           </div>
         </div>
 
         <div className="relative mt-8">
-          <p className="text-[14px] text-white/70">{isToday ? `${longDayAR(day)} · Hola, ${profile?.full_name?.split(' ')[0] || 'equipo'}` : longDayAR(day)}</p>
+          <p className="text-[14px] text-white/70">{isToday ? `${longDayAR(day)} · Hola, ${greetingName}` : longDayAR(day)}</p>
           <p className="mt-1 text-xs text-white/70">Monto registrado del día</p>
           <p className="mt-1.5 text-[38px] font-extrabold leading-none tracking-tight tabular-nums">{money(totalDia)}</p>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -104,6 +112,16 @@ export default function CajaHome() {
       </div>
 
       <section className="mt-7 px-4">
+        <Card className="mb-5 p-4 text-sm">
+          <p className="font-semibold">Control diario de recibos · 8:00 h</p>
+          <p className="mt-1 text-slate">Revisión de los datos guardados, todos los días, hora argentina.</p>
+          {review ? <>
+            <p className="mt-2 text-slate">Último control: {dateTimeAR(review.checked_at)} · {review.checked} recibos revisados.</p>
+            <p className={cx('mt-1 font-medium', review.errors ? 'text-iodine' : 'text-saline-dark')}>
+              {review.errors ? `${review.errors} recibo(s) necesitan revisión. Abrí el comprobante para ver el motivo.` : 'No se detectaron errores en los datos guardados.'}
+            </p>
+          </> : <p className="mt-2 text-slate">El primer resultado aparecerá después del control automático.</p>}
+        </Card>
         <h2 className="mb-3 px-1 text-[15px] font-bold">{isToday ? 'Cargados hoy' : `Cargados el ${dateAR(day)}`}</h2>
         {tickets === null ? (
           <div className="grid place-items-center py-12"><Spinner /></div>

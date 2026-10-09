@@ -167,12 +167,12 @@ export function Logo({ light, compact, full, className }) {
  * Encabezado institucional: monograma + "Instituto de Investigaciones Clínicas de Córdoba".
  * `light` para fondos oscuros. `section` agrega el nombre de la pantalla debajo.
  */
-export function InstituteMark({ light, section, className, small }) {
+export function InstituteMark({ light, section, className, small, fullWidth }) {
   return (
     <div className={cx('flex min-w-0 items-center gap-3', className)}>
-      <div className="min-w-0 leading-tight">
+      <div className={cx('min-w-0 leading-tight', fullWidth && 'w-full')}>
         <img src={logoFull} alt="Instituto de Investigaciones Clínicas de Córdoba"
-          className={cx('h-auto max-w-full object-contain', small ? 'w-52' : 'w-64', light && 'rounded-lg bg-white px-3 py-2')} />
+          className={cx('h-auto max-w-full object-contain', fullWidth ? 'w-full' : small ? 'w-52' : 'w-64', light && 'rounded-lg bg-white px-3 py-2')} />
         {(section || IS_DEMO) && (
           <p className={cx('mt-0.5 flex items-center gap-1.5 text-[11.5px]', light ? 'text-white/60' : 'text-slate')}>
             {section}
