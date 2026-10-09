@@ -47,7 +47,7 @@ export default function AdminLayout() {
       {menuOpen && <button className="fixed inset-0 z-40 bg-black/30 lg:hidden" aria-label="Contraer menú" onClick={() => setMenuOpen(false)} />}
         <aside id="admin-rail" aria-label="Menú de administración" data-expanded={expanded}
           onPointerEnter={e => { if (e.pointerType === 'mouse') setHovered(true); }} onPointerLeave={() => setHovered(false)}
-          onFocusCapture={() => setFocused(true)} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}
+          onFocusCapture={e => { if (e.target.matches(':focus-visible')) setFocused(true); }} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}
           onKeyDown={e => { if (e.key === 'Escape') { setMenuOpen(false); setHovered(false); setFocused(false); e.target.blur(); } }}
           className="admin-sidebar admin-rail petrol-hero flex flex-col text-white">
           <div className="admin-brand rail-brand relative mb-5 shrink-0 bg-white">
