@@ -186,6 +186,7 @@ body {
 
 /* Compact CRM navigation rail, expanded over content on hover or touch. */
 .admin-rail-shell { padding-left: 72px; }
+@media (hover: hover) and (pointer: fine) { .admin-touch-menu { display: none; } }
 .admin-rail { position: fixed; inset: 0 auto 0 0; z-index: 50; width: 72px; height: 100dvh; overflow: hidden; transition: width 240ms ease, box-shadow 240ms ease; padding-bottom: env(safe-area-inset-bottom); }
 .admin-rail[data-expanded="true"] { width: min(288px, 88vw); box-shadow: 12px 0 36px rgb(6 22 28 / .25); }
 .rail-brand { height: 100px; display: flex; align-items: center; justify-content: center; padding: 12px; }

@@ -37,7 +37,7 @@ export default function AdminLayout() {
   return (
     <div className="admin-shell admin-rail-shell min-h-full">
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-mist bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
-        <button onClick={() => setMenuOpen(value => !value)} className="grid size-11 shrink-0 place-items-center rounded-xl bg-fog text-petrol hover:bg-mist" aria-label={menuOpen ? 'Contraer menú' : 'Expandir menú'} aria-expanded={expanded} aria-controls="admin-rail"><Menu className="size-5" /></button>
+        <button onClick={() => setMenuOpen(value => !value)} className="admin-touch-menu grid size-11 shrink-0 place-items-center rounded-xl bg-fog text-petrol hover:bg-mist" aria-label={menuOpen ? 'Contraer menú' : 'Expandir menú'} aria-expanded={expanded} aria-controls="admin-rail"><Menu className="size-5" /></button>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold text-petrol">Panel de administración</p>
           <p className="truncate text-xs text-slate">{NAV_GROUPS.flatMap(g => g.items).find(i => i.to === location.pathname)?.label || 'Instituto de Investigaciones Clínicas'}</p>
