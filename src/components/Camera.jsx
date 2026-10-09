@@ -9,6 +9,7 @@ import { detectDocument, sameDocument, documentCrop } from '../lib/document-dete
  */
 export default function Camera({ onCapture, onClose, hint = 'Encuadrá el documento completo' }) {
   const videoRef = useRef(null);
+  const viewportRef = useRef(null);
   const streamRef = useRef(null);
   const fileRef = useRef(null);
   const nativeCameraRef = useRef(null);
@@ -22,6 +23,12 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
   const [error, setError] = useState(null);
   const [torch, setTorch] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,7 +80,16 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
       const scale = 360 / Math.max(video.videoWidth, video.videoHeight);
       canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const box = detectDocument(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      let box = detectDocument(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      // object-cover hides part of the sensor: never auto-capture hidden paper edges.
+      const viewport = viewportRef.current;
+      if (box && viewport?.clientWidth && viewport?.clientHeight) {
+        const zoom = Math.max(viewport.clientWidth / video.videoWidth, viewport.clientHeight / video.videoHeight);
+        const visibleWidth = viewport.clientWidth / zoom / video.videoWidth;
+        const visibleHeight = viewport.clientHeight / zoom / video.videoHeight;
+        const left = (1 - visibleWidth) / 2, top = (1 - visibleHeight) / 2;
+        if (box.x < left || box.y < top || box.x + box.width > left + visibleWidth || box.y + box.height > top + visibleHeight) box = null;
+      }
       setDocumentBox(box);
       if (!box?.sharp || !sameDocument(previous, box) || !sameDocument(anchor, box)) {
         stableSince = Date.now(); anchor = box;
@@ -142,8 +158,8 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-[#06161C] text-white">
-      <div className="safe-top flex items-center justify-between px-4 pb-3">
+    <div ref={viewportRef} className="fixed inset-0 z-50 h-dvh overflow-hidden bg-[#06161C] text-white">
+      <div className="safe-top absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-2 bg-gradient-to-b from-black/80 to-transparent px-4 pb-8">
         <button onClick={onClose} className="grid size-11 place-items-center rounded-full bg-white/10" aria-label="Cerrar cámara"><X /></button>
         <p className="px-2 text-center text-sm font-medium text-white/80">{hint}</p>
         {torchAvailable ? (
@@ -153,12 +169,12 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
         ) : <span className="size-11" />}
       </div>
 
-      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden">
         <div className="relative" style={{ width: '100%', height: '100%' }}>
-        <video ref={videoRef} playsInline muted className="absolute inset-0 h-full w-full object-contain" />
+        <video ref={videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
         {ready && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            {!documentBox && <div className="relative h-[78%] w-[80%] max-w-lg rounded-[18px] border-2 border-white/40">
+            {!documentBox && <div className="relative h-[52%] w-[86%] max-w-lg rounded-[18px] border-2 border-white/40">
               {['-left-0.5 -top-0.5 border-l-4 border-t-4 rounded-tl-[18px]', '-right-0.5 -top-0.5 border-r-4 border-t-4 rounded-tr-[18px]',
                 '-left-0.5 -bottom-0.5 border-l-4 border-b-4 rounded-bl-[18px]', '-right-0.5 -bottom-0.5 border-r-4 border-b-4 rounded-br-[18px]'].map((c) => (
                 <span key={c} className={`absolute size-8 border-saline ${c}`} />
@@ -167,27 +183,24 @@ export default function Camera({ onCapture, onClose, hint = 'Encuadrá el docume
             </div>}
           </div>
         )}
-        {documentBox && <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`0 0 ${videoSize.width} ${videoSize.height}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        {documentBox && <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`0 0 ${videoSize.width} ${videoSize.height}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
           <rect x={documentBox.x * videoSize.width} y={documentBox.y * videoSize.height} width={documentBox.width * videoSize.width} height={documentBox.height * videoSize.height} fill="rgba(16,185,129,.08)" stroke={documentBox.sharp ? '#34d399' : '#fbbf24'} strokeWidth="4" vectorEffect="non-scaling-stroke" rx="8" />
         </svg>}
         {error && (
-          <div className="absolute inset-0 grid place-items-center p-8 text-center">
+          <div className="absolute inset-0 grid place-items-center bg-black/60 p-8 text-center">
             <p className="max-w-xs text-white/85">{error}</p>
           </div>
         )}
         </div>
       </div>
 
-      <div className="safe-bottom max-h-[48dvh] overflow-y-auto px-6 pt-3">
+      <div className="safe-bottom absolute inset-x-0 bottom-0 z-20 max-h-[42dvh] overflow-y-auto bg-gradient-to-t from-black/90 via-black/70 to-transparent px-5 pt-8">
         {ready && <div className="mx-auto mb-3 max-w-md text-center" aria-live="polite">
           <p className="text-sm font-medium">{!automatic ? 'Modo manual' : !documentBox ? 'Buscando documento: mostrá los cuatro bordes' : !documentBox.sharp ? 'Mejorá la luz y esperá que enfoque' : progress > 0 ? 'Mantené quieto: tomando foto automáticamente…' : 'Documento detectado. Mantené el teléfono quieto'}</p>
           <div className="mt-2 h-1 overflow-hidden rounded bg-white/15"><div className="h-full bg-emerald-400 transition-all" style={{ width: `${progress * 100}%` }} /></div>
           <button type="button" onClick={() => setAutomatic(value => !value)} aria-pressed={automatic} className="mt-2 rounded-lg px-3 py-2 text-xs text-white/80">Foto automática: {automatic ? 'activada' : 'desactivada'}</button>
         </div>}
-        <ul className="mb-5 space-y-1 text-center text-[13px] text-white/65">
-          <li>Papel plano, con buena luz y sin sombras.</li>
-          <li>Que se vean el estudio, la visita, el importe y la aclaración.</li>
-        </ul>
+        <p className="mb-3 text-center text-xs text-white/80">Mostrá el papel completo, con buena luz.</p>
         <div className="flex items-center justify-between">
           <button onClick={() => choosePhoto(fileRef)} className="flex w-20 flex-col items-center gap-1 text-xs text-white/80">
             <span className="grid size-12 place-items-center rounded-full bg-white/10"><ImageUp className="size-5" /></span>
