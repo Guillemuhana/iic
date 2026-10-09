@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { instituteClock } from '../../../shared/institute-clock.js';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { BarChart3, Receipt, Send, Settings, LogOut, CalendarDays, Menu, X } from 'lucide-react';
@@ -21,21 +21,12 @@ const NAV_GROUPS = [
 export default function AdminLayout() {
   const { profile, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [now, setNow] = useState(() => new Date());
-  const drawerRef = useRef(null);
+  const expanded = menuOpen || hovered || focused;
   const location = useLocation();
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
-  useEffect(() => {
-    const drawer = drawerRef.current;
-    if (menuOpen) {
-      drawer.showModal();
-      const previousOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => { document.body.style.overflow = previousOverflow; };
-    }
-    const timer = setTimeout(() => drawer.close(), 250);
-    return () => clearTimeout(timer);
-  }, [menuOpen]);
   useEffect(() => {
     const refresh = () => setNow(new Date());
     const timer = setInterval(refresh, 30000);
@@ -44,43 +35,47 @@ export default function AdminLayout() {
   }, []);
   const clock = instituteClock(now);
   return (
-    <div className="admin-shell min-h-full">
+    <div className="admin-shell admin-rail-shell min-h-full">
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-mist bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
-        <button onClick={() => setMenuOpen(true)} className="grid size-11 shrink-0 place-items-center rounded-xl bg-fog text-petrol hover:bg-mist" aria-label="Abrir menú" aria-expanded={menuOpen} aria-controls="admin-drawer"><Menu className="size-5" /></button>
+        <button onClick={() => setMenuOpen(value => !value)} className="grid size-11 shrink-0 place-items-center rounded-xl bg-fog text-petrol hover:bg-mist" aria-label={menuOpen ? 'Contraer menú' : 'Expandir menú'} aria-expanded={expanded} aria-controls="admin-rail"><Menu className="size-5" /></button>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold text-petrol">Panel de administración</p>
           <p className="truncate text-xs text-slate">{NAV_GROUPS.flatMap(g => g.items).find(i => i.to === location.pathname)?.label || 'Instituto de Investigaciones Clínicas'}</p>
         </div>
         <p className="hidden text-sm text-slate sm:block">{profile?.full_name || profile?.email}</p>
       </header>
-      <dialog ref={drawerRef} id="admin-drawer" aria-label="Menú de administración" className="admin-drawer" data-expanded={menuOpen} onCancel={e => { e.preventDefault(); setMenuOpen(false); }} onClick={e => { if (e.target === e.currentTarget) setMenuOpen(false); }}>
-        <aside className="admin-sidebar petrol-hero flex h-full w-[min(320px,88vw)] flex-col text-white">
-          <div className="admin-brand relative mb-5 shrink-0 bg-white px-5 pb-5 pt-14">
-            <button autoFocus onClick={() => setMenuOpen(false)} className="absolute right-3 top-3 grid size-9 place-items-center rounded-xl bg-fog text-petrol hover:bg-mist" aria-label="Cerrar menú"><X className="size-5" /></button>
-            <Logo full className="admin-sidebar-logo !w-full" />
+      {menuOpen && <button className="fixed inset-0 z-40 bg-black/30 lg:hidden" aria-label="Contraer menú" onClick={() => setMenuOpen(false)} />}
+        <aside id="admin-rail" aria-label="Menú de administración" data-expanded={expanded}
+          onPointerEnter={e => { if (e.pointerType === 'mouse') setHovered(true); }} onPointerLeave={() => setHovered(false)}
+          onFocusCapture={() => setFocused(true)} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}
+          onKeyDown={e => { if (e.key === 'Escape') { setMenuOpen(false); setHovered(false); setFocused(false); e.target.blur(); } }}
+          className="admin-sidebar admin-rail petrol-hero flex flex-col text-white">
+          <div className="admin-brand rail-brand relative mb-5 shrink-0 bg-white">
+            <Logo className="rail-mark !w-10" />
+            <Logo full className="rail-full-logo admin-sidebar-logo !w-full" />
+            <button onClick={() => { setMenuOpen(false); setHovered(false); setFocused(false); }} className="rail-close grid size-8 place-items-center rounded-lg bg-fog text-petrol" aria-label="Contraer menú"><X className="size-4" /></button>
           </div>
           <nav aria-label="Menú principal" className="scrollbar-thin min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-4">
             {NAV_GROUPS.map(group => (
               <div key={group.label}>
-                <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.15em] text-white/45">{group.label}</p>
+                <p className="rail-group mb-2 px-3 text-[10px] font-bold uppercase tracking-[.15em] text-white/45">{group.label}</p>
                 <div className="space-y-1">{group.items.map(({ to, end, label, icon: Icon }) => (
-                  <NavLink key={to} to={to} end={end} onClick={() => setMenuOpen(false)} className={({ isActive }) => cx('admin-nav-link flex items-center gap-3 rounded-xl px-3 py-3 text-[14.5px] font-medium transition-colors', isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10 hover:text-white')}>
-                    <Icon className="size-[18px]" /> {label}
+                  <NavLink key={to} to={to} end={end} title={label} aria-label={label} onClick={() => setMenuOpen(false)} className={({ isActive }) => cx('admin-nav-link rail-link flex items-center gap-3 rounded-xl px-3 py-3 text-[14.5px] font-medium transition-colors', isActive ? 'bg-white text-petrol' : 'text-white/75 hover:bg-white/10 hover:text-white')}>
+                    <Icon className="size-[18px] shrink-0" /> <span className="rail-label">{label}</span>
                   </NavLink>
                 ))}</div>
               </div>
             ))}
           </nav>
-          <div className="space-y-3 p-4">
-            <div className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5">
+          <div className="rail-footer space-y-3 p-4">
+            <div className="rail-user flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5">
               <div className="grid size-9 shrink-0 place-items-center rounded-full bg-white/15 text-sm font-bold">{(profile?.full_name || profile?.email || '?').slice(0, 1).toUpperCase()}</div>
-              <div className="min-w-0 flex-1 leading-tight"><p className="truncate text-sm font-semibold">{profile?.full_name || profile?.email}</p><p className="text-xs text-white/55">Administrador</p></div>
-              <button onClick={signOut} className="rounded-lg p-1.5 text-white/70 hover:bg-white/10" aria-label="Cerrar sesión"><LogOut className="size-4" /></button>
+              <div className="rail-label min-w-0 flex-1 leading-tight"><p className="truncate text-sm font-semibold">{profile?.full_name || profile?.email}</p><p className="text-xs text-white/55">Administrador</p></div>
+              <button onClick={signOut} className="rail-label rounded-lg p-1.5 text-white/70 hover:bg-white/10" aria-label="Cerrar sesión"><LogOut className="size-4" /></button>
             </div>
-            <time dateTime={now.toISOString()} className="block px-1 text-xs text-white/60"><span className="block capitalize">{clock.date}</span><span className="mt-1 block font-semibold tabular-nums text-white/85">{clock.time} h · Argentina</span></time>
+            <time dateTime={now.toISOString()} className="rail-label block px-1 text-xs text-white/60"><span className="block capitalize">{clock.date}</span><span className="mt-1 block font-semibold tabular-nums text-white/85">{clock.time} h · Argentina</span></time>
           </div>
         </aside>
-      </dialog>
       <main className="admin-main min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-9"><Outlet context={{ clock }} /></main>
     </div>
   );

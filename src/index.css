@@ -183,10 +183,23 @@ body {
 @keyframes menu-outline-turn { to { --menu-glow-angle: 360deg; } }
 @media (prefers-reduced-motion: reduce) { .admin-nav-link, .admin-nav-link:hover, .admin-nav-link[aria-current="page"] { animation: none; } .admin-nav-link:active { transform: none; } }
 
-/* CRM drawer: native modal keeps focus inside and restores it on close. */
-.admin-drawer { position: fixed; inset: 0; margin: 0; width: 100%; max-width: none; height: 100dvh; max-height: none; padding: 0; border: 0; background: transparent; overflow: hidden; }
-.admin-drawer::backdrop { background: rgb(6 22 28 / .5); }
-.admin-drawer .admin-sidebar { transform: translateX(-100%); transition: transform 250ms ease; padding-bottom: env(safe-area-inset-bottom); }
-.admin-drawer[data-expanded="true"] .admin-sidebar { transform: translateX(0); }
-@starting-style { .admin-drawer[data-expanded="true"] .admin-sidebar { transform: translateX(-100%); } }
-@media (prefers-reduced-motion: reduce) { .admin-drawer .admin-sidebar { transition: none; } }
+
+/* Compact CRM navigation rail, expanded over content on hover or touch. */
+.admin-rail-shell { padding-left: 72px; }
+.admin-rail { position: fixed; inset: 0 auto 0 0; z-index: 50; width: 72px; height: 100dvh; overflow: hidden; transition: width 240ms ease, box-shadow 240ms ease; padding-bottom: env(safe-area-inset-bottom); }
+.admin-rail[data-expanded="true"] { width: min(288px, 88vw); box-shadow: 12px 0 36px rgb(6 22 28 / .25); }
+.rail-brand { height: 100px; display: flex; align-items: center; justify-content: center; padding: 12px; }
+.rail-full-logo, .rail-close { display: none; }
+.rail-label, .rail-group { display: none; white-space: nowrap; }
+.rail-link { min-height: 48px; width: 48px; }
+.rail-footer { padding: 12px; }
+.rail-user { padding: 6px; }
+.admin-rail[data-expanded="true"] .rail-label { display: block; }
+.admin-rail[data-expanded="true"] .rail-group { display: block; }
+.admin-rail[data-expanded="true"] .rail-link { width: 100%; }
+.admin-rail[data-expanded="true"] .rail-mark { display: none; }
+.admin-rail[data-expanded="true"] .rail-full-logo { display: block; }
+.admin-rail[data-expanded="true"] .rail-brand { padding: 28px 16px 12px; }
+.admin-rail[data-expanded="true"] .rail-close { display: grid; position: absolute; top: 3px; right: 6px; }
+.admin-rail[data-expanded="true"] .rail-user { padding: 10px; }
+@media (prefers-reduced-motion: reduce) { .admin-rail { transition: none; } }
