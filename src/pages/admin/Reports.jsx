@@ -1,12 +1,13 @@
 import { savedReimbursementError } from '../../../shared/save-validation.js';
 import { useCallback, useEffect, useState } from 'react';
-import { MailCheck, MailX, History, Clock, PauseCircle, ChevronDown } from 'lucide-react';
+import { MailCheck, MailX, History, Clock, PauseCircle, ChevronDown, Download, Printer } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { api } from '../../lib/api';
 import { Button, Card, Empty, Spinner, Badge, Field, useToast, cx } from '../../components/ui';
 import { PageHead } from './AdminLayout';
 import { money, dateAR, dateTimeAR, todayISO, startOfMonth, nextWeeklySend } from '../../lib/format';
+import logoUrl from '../../assets/logo01.png';
 
 const KIND = { automatico: 'Automático semanal', reenvio: 'Reenvío', manual: 'Manual', cierre: 'Cierre de caja' };
 
@@ -19,6 +20,7 @@ export default function Reports() {
   const [schedule, setSchedule] = useState({});
   const [busy, setBusy] = useState(false);
   const [showResend, setShowResend] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [range, setRange] = useState({ from: startOfMonth(todayISO()), to: todayISO() });
 
   const load = useCallback(async () => {
@@ -46,6 +48,36 @@ export default function Reports() {
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   };
 
+  const exportPdf = async (print = false) => {
+    if (!range.from || !range.to || range.from > range.to) return toast('Indicá un período válido.', 'error');
+    const preview = print ? window.open('', '_blank') : null;
+    if (print && !preview) return toast('Permití abrir ventanas para imprimir el reporte.', 'error');
+    if (preview) { preview.opener = null; preview.document.title = 'Preparando reporte'; preview.document.body.textContent = 'Preparando el reporte PDF…'; }
+    setPdfBusy(true);
+    try {
+      const [{ buildReportPdf }, logoResponse] = await Promise.all([import('../../../shared/report-pdf.js'), fetch(logoUrl)]);
+      if (!logoResponse.ok) throw new Error('No se pudo cargar el logo del instituto.');
+      const logo = new Uint8Array(await logoResponse.arrayBuffer());
+      const tickets = [];
+      for (let offset = 0; ; offset += 500) {
+        const { data, error } = await supabase.from('tickets').select('*').neq('status', 'anulado')
+          .gte('fecha_comprobante', range.from).lte('fecha_comprobante', range.to)
+          .order('fecha_comprobante').order('id').range(offset, offset + 499);
+        if (error) throw error;
+        tickets.push(...data);
+        if (data.length < 500) break;
+      }
+      const doc = buildReportPdf({ tickets, ...range, logo });
+      if (print) {
+        doc.autoPrint();
+        const url = URL.createObjectURL(doc.output('blob'));
+        preview.location.replace(url);
+        setTimeout(() => URL.revokeObjectURL(url), 300000);
+      } else doc.save(`IIC-reintegros-${range.from}-${range.to}.pdf`);
+    } catch (e) { preview?.close(); toast(e.message || 'No se pudo generar el PDF.', 'error'); }
+    finally { setPdfBusy(false); }
+  };
+
   const nextSend = nextWeeklySend(new Date(), schedule);
   const lastError = reports?.find((r) => r.trigger_kind === 'automatico')?.status === 'error';
 
@@ -55,6 +87,16 @@ export default function Reports() {
         text="La secretaría solo escanea. Según el horario configurado, el sistema le manda a la contadora un reporte de lo cargado durante la semana, la planilla Excel y las fotos con los datos tapados." />
 
       <p className="mb-4 text-sm"><Link to="/panel/configuracion" className="font-semibold text-petrol-3 underline">Cambiar destinatario, día y hora de envío</Link></p>
+      <Card className="mb-5 p-5">
+        <h2 className="font-bold">Reporte para descargar e imprimir</h2>
+        <p className="mt-1 text-sm text-slate">Elegí el período por fecha del comprobante. Incluye el resumen por estudio y el detalle de los recibos validados, con los datos actuales.</p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <Field label="Desde"><input type="date" className="field" value={range.from} max={range.to} onChange={e => setRange({ ...range, from: e.target.value })} /></Field>
+          <Field label="Hasta"><input type="date" className="field" value={range.to} min={range.from} onChange={e => setRange({ ...range, to: e.target.value })} /></Field>
+          <Button icon={Download} loading={pdfBusy} onClick={() => exportPdf()}>Descargar PDF</Button>
+          <Button variant="outline" icon={Printer} disabled={pdfBusy} onClick={() => exportPdf(true)}>Imprimir / ver PDF</Button>
+        </div>
+      </Card>
       <Card className="overflow-hidden">
         <div className="grid gap-0 md:grid-cols-[1.3fr_1fr]">
           <div className="p-6 sm:p-7">
