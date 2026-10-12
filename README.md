@@ -112,6 +112,13 @@ npx vercel dev          # frontend + /api juntos en http://localhost:3000
 
 Los permisos se aplican en la base de datos (RLS), no solo en la interfaz. Los recibos nunca se borran: se anulan con motivo y queda auditoría (`audit_log`).
 
+## Seguridad
+
+- **Encabezados HTTP** (`vercel.json`): CSP (solo Supabase, Google Fonts y jsDelivr para el OCR local), HSTS, `frame-ancestors 'none'`/`X-Frame-Options` contra clickjacking, COOP y `Permissions-Policy` (solo cámara).
+- **API** (`api/_lib/security.js`): límite de pedidos por usuario (lectura IA 30/min, guardado 20/min, reenvíos 5 cada 10 min, usuarios 20/min); `CRON_SECRET` comparado en tiempo constante; respuestas `no-store`; los errores internos no se muestran al navegador.
+- **Usuarios**: contraseñas de mínimo 10 caracteres con letras y números; altas y cambios de usuarios quedan en `audit_log` (sin la contraseña).
+- **Sesión**: se cierra sola tras 30 minutos sin uso.
+
 ## Estructura
 
 ```

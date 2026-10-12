@@ -13,7 +13,8 @@ export default function MoneyInput({ label, value, onChange, flag }) {
     const next = parts.map((p, i) => i === index ? text : p);
     setParts(next);
     const valid = /^\d{1,12}$/.test(next[0]) && /^\d{0,2}$/.test(next[1]);
-    onChange(valid ? Number(next[0]) + Number(next[1] || 0) / 100 : null);
+    // En centavos enteros para no arrastrar errores de punto flotante (ej. 0.1 + 0.2).
+    onChange(valid ? Math.round(Number(next[0]) * 100 + Number(next[1] || 0)) / 100 : null);
   };
   return <fieldset className="min-w-0">
     <legend className="mb-2 text-sm font-semibold text-petrol">{label}</legend>

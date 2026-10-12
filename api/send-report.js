@@ -1,4 +1,4 @@
-import { handler, requireUser, HttpError } from './_lib/supabase.js';
+import { handler, requireUser, limitUser, HttpError } from './_lib/supabase.js';
 import { sendAccountantReport } from './_lib/report.js';
 
 export const config = { maxDuration: 60 };
@@ -9,6 +9,7 @@ export const config = { maxDuration: 60 };
 // POST { from: 'aaaa-mm-dd', to: 'aaaa-mm-dd' }
 export default handler(['POST'], async (req) => {
   const user = await requireUser(req, ['admin']);
+  limitUser(user, 'send-report', 5, 10 * 60_000);
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
   const isoRe = /^\d{4}-\d{2}-\d{2}$/;
   if (!isoRe.test(body.from || '') || !isoRe.test(body.to || '')) throw new HttpError(400, 'Indicá el período a reenviar.');

@@ -33,13 +33,17 @@ export default function Users() {
   };
 
   const patch = async (body, msg) => {
-    try { await api('users', { method: 'PATCH', body }); toast(msg); load(); }
-    catch (e) { toast(e.message, 'error'); }
+    try { await api('users', { method: 'PATCH', body }); toast(msg); load(); return true; }
+    catch (e) { toast(e.message, 'error'); return false; }
   };
 
   const genPass = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-    return Array.from(crypto.getRandomValues(new Uint32Array(10)), (n) => chars[n % chars.length]).join('');
+    // 12 caracteres con letras y números (la API exige ambos).
+    for (;;) {
+      const p = Array.from(crypto.getRandomValues(new Uint32Array(12)), (n) => chars[n % chars.length]).join('');
+      if (/[A-Za-z]/.test(p) && /\d/.test(p)) return p;
+    }
   };
 
   return (
@@ -81,7 +85,7 @@ export default function Users() {
           <div className="space-y-4">
             <Field label="Nombre y apellido"><input className="field" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} autoFocus /></Field>
             <Field label="Email"><input className="field" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
-            <Field label="Contraseña inicial" hint="Copiala y pasásela a la persona. Mínimo 8 caracteres.">
+            <Field label="Contraseña inicial" hint="Copiala y pasásela a la persona. Mínimo 10 caracteres, con letras y números.">
               <input className="field font-mono" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
             </Field>
             <Field label="Rol">
@@ -95,7 +99,13 @@ export default function Users() {
 
       <Modal open={!!pwd} onClose={() => setPwd(null)} title="Cambiar contraseña"
         footer={<><Button variant="ghost" onClick={() => setPwd(null)}>Cancelar</Button>
-          <Button onClick={async () => { await patch({ id: pwd.id, password: pwd.password }, 'Contraseña actualizada.'); setPwd(null); }}>Guardar contraseña</Button></>}>
+          <Button loading={busy} onClick={async () => {
+            setBusy(true);
+            // Si falla, el modal queda abierto para no perder la contraseña escrita.
+            const ok = await patch({ id: pwd.id, password: pwd.password }, 'Contraseña actualizada.');
+            setBusy(false);
+            if (ok) setPwd(null);
+          }}>Guardar contraseña</Button></>}>
         {pwd && (
           <Field label={`Nueva contraseña para ${pwd.name}`} hint="Copiala antes de guardar.">
             <input className="field font-mono" value={pwd.password} onChange={(e) => setPwd({ ...pwd, password: e.target.value })} />

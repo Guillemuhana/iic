@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { rateLimit } from './security.js';
 
 let admin;
 
@@ -26,7 +27,7 @@ export class HttpError extends Error {
 export async function requireUser(req, roles = ['admin', 'administracion']) {
   const header = req.headers.authorization || req.headers.Authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) throw new HttpError(401, 'Sesión no encontrada. Volvé a iniciar sesión.');
+  if (!token || token.length > 4096) throw new HttpError(401, 'Sesión no encontrada. Volvé a iniciar sesión.');
   const sb = supabaseAdmin();
   const { data, error } = await sb.auth.getUser(token);
   if (error || !data?.user) throw new HttpError(401, 'La sesión venció. Volvé a iniciar sesión.');
@@ -37,9 +38,17 @@ export async function requireUser(req, roles = ['admin', 'administracion']) {
   return profile;
 }
 
+/** Límite de pedidos por usuario para una acción (429 al superarlo). */
+export function limitUser(user, action, max, windowMs = 60_000) {
+  rateLimit(`${action}:${user.id}`, max, windowMs, HttpError);
+}
+
 /** Envuelve un handler con manejo de errores y método permitido. */
 export function handler(methods, fn) {
   return async (req, res) => {
+    // Las respuestas tienen datos de pacientes y del instituto: nunca se cachean.
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     if (!methods.includes(req.method)) {
       res.setHeader('Allow', methods.join(', '));
       return res.status(405).json({ error: 'Método no permitido' });
@@ -48,9 +57,13 @@ export function handler(methods, fn) {
       const result = await fn(req, res);
       if (!res.headersSent) res.status(200).json(result ?? { ok: true });
     } catch (err) {
-      const status = err.status || 500;
+      const status = err instanceof SyntaxError ? 400 : err.status || 500;
       if (status >= 500) console.error(err);
-      if (!res.headersSent) res.status(status).json({ error: err.message || 'Error inesperado' });
+      if (err.retryAfter) res.setHeader('Retry-After', String(err.retryAfter));
+      // Errores no previstos no exponen detalles internos al navegador.
+      const message = status === 400 && err instanceof SyntaxError ? 'Pedido inválido.'
+        : err instanceof HttpError ? err.message : 'Error inesperado. Volvé a intentar.';
+      if (!res.headersSent) res.status(status).json({ error: message });
     }
   };
 }

@@ -1,12 +1,12 @@
 import { handler, HttpError, supabaseAdmin } from './_lib/supabase.js';
+import { isCronAuthorized } from './_lib/security.js';
 import { savedReimbursementError } from '../shared/save-validation.js';
 
 export const config = { maxDuration: 60 };
 
 // 11:00 UTC = 08:00 Argentina. Only validates stored data; never changes receipts.
 export default handler(['GET'], async (req) => {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.authorization !== `Bearer ${secret}`) throw new HttpError(401, 'No autorizado');
+  if (!isCronAuthorized(req)) throw new HttpError(401, 'No autorizado');
   const sb = supabaseAdmin();
   const startedAt = new Date().toISOString();
   let checked = 0, errors = 0, pendingErrors = 0;

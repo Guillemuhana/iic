@@ -1,10 +1,11 @@
-import { handler, requireUser, supabaseAdmin, HttpError } from './_lib/supabase.js';
+import { handler, requireUser, limitUser, supabaseAdmin, HttpError } from './_lib/supabase.js';
 import { savedReimbursementError } from '../shared/save-validation.js';
 
 const FIELDS = ['tipo_comprobante', 'concepto', 'estudio', 'visita', 'paciente_iniciales', 'paciente_numero', 'fecha_comprobante', 'monto_detalle', 'total', 'adjunta_comprobantes', 'recibe_viatico', 'desayuno', 'medio_pago', 'nro_operacion', 'pago', 'comprobantes_adjuntos', 'notas', 'image_path', 'image_paths', 'datos_ocultos', 'raw_text', 'extraction', 'confidence', 'model'];
 
 export default handler(['POST'], async req => {
   const user = await requireUser(req);
+  limitUser(user, 'save', 20);
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
   const ticket = Object.fromEntries(FIELDS.filter(k => k in body).map(k => [k, body[k]]));
   const error = savedReimbursementError(ticket);

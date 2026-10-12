@@ -1,7 +1,7 @@
-import { handler, requireUser, supabaseAdmin, HttpError } from './_lib/supabase.js';
+import { handler, requireUser, limitUser, supabaseAdmin, HttpError } from './_lib/supabase.js';
 import { loadingBounds, buildTicketStats } from '../shared/ticket-stats.js';
 export default handler(['POST'], async req => {
- await requireUser(req, ['admin']);
+ limitUser(await requireUser(req, ['admin']), 'stats', 30);
  const { from, to } = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
  let bounds;try { bounds = loadingBounds(from, to); } catch { throw new HttpError(400, 'Invalid date range'); }
  const rows = [];

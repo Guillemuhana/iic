@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { loadingBounds } from '../../../shared/ticket-stats.js';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, Download, Receipt, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button, Card, Empty, Spinner, StatusBadge, useToast, cx, IS_DEMO } from '../../components/ui';
@@ -38,25 +38,40 @@ export default function Tickets() {
     return query;
   }, [period.from, period.to, status, debounced]);
 
+  // Supabase devuelve como máximo 1000 filas por pedido: se pagina para no cortar totales ni exportaciones.
+  const fetchAll = useCallback(async (select, refine = (query) => query) => {
+    const all = [];
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await refine(buildQuery(select)).order('id').range(offset, offset + 999);
+      if (error) return { error };
+      all.push(...data);
+      if (data.length < 1000) return { data: all };
+    }
+  }, [buildQuery]);
+
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setRows(null);
     const [{ data, count: c, error }, totals] = await Promise.all([
       buildQuery('*, profiles:created_by(full_name)', { count: 'exact' })
         .order('created_at', { ascending: false }).order('id')
         .range(page * PAGE, page * PAGE + PAGE - 1),
-      buildQuery('total').neq('status', 'anulado').limit(10000),
+      fetchAll('total', (query) => query.neq('status', 'anulado')),
     ]);
+    // Si cambiaron los filtros mientras tanto, esta respuesta ya no corresponde.
+    if (seq !== loadSeq.current) return;
     if (error) { toast(error.message, 'error'); setRows([]); return; }
     setRows(data);
     setCount(c || 0);
-    setSum((totals.data || []).reduce((a, t) => a + Number(t.total), 0));
-  }, [buildQuery, page, toast]);
+    setSum((totals.data || []).reduce((a, t) => a + Math.round(Number(t.total || 0) * 100), 0) / 100);
+  }, [buildQuery, fetchAll, page, toast]);
 
   useEffect(() => { load(); }, [load]);
 
   const exportCsv = async () => {
     if (IS_DEMO) return toast('En la demo no se descargan archivos. En la app real se baja un CSV que abre en Excel.', 'info');
-    const { data, error } = await buildQuery('*, profiles:created_by(full_name)').order('fecha_comprobante').limit(10000);
+    const { data, error } = await fetchAll('*, profiles:created_by(full_name)', (query) => query.order('fecha_comprobante'));
     if (error) return toast(error.message, 'error');
     const head = ['Fecha', 'Estudio', 'Visita', 'Iniciales', 'N paciente', 'Adjunta comprobantes', 'Recibe viatico', 'Desayuno', 'Comprobantes adjuntos', 'Suma comprobantes', 'Detalle escrito', 'Medio de pago', 'N operacion', 'Total recibido', 'Estado', 'Cargado por'];
     const yn = (v) => (v === true ? 'SI' : v === false ? 'NO' : '');
@@ -70,7 +85,8 @@ export default function Tickets() {
     a.href = URL.createObjectURL(blob);
     a.download = `reintegros_${period.from}_${period.to}.csv`;
     a.click();
-    URL.revokeObjectURL(a.href);
+    // Revocar enseguida cancela la descarga en algunos navegadores.
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   };
 
 

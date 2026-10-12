@@ -35,7 +35,8 @@ export default function SettingsPage() {
     const { ccText, ...contadora } = s.contadora;
     const rows = [
       { key: 'contadora', value: { ...contadora, email: contadora.email.trim(), cc } },
-      { key: 'envio_automatico', value: s.envio_automatico },
+      // El <select> entrega el día como texto; se guarda normalizado (número).
+      { key: 'envio_automatico', value: scheduleConfig(s.envio_automatico) },
       { key: 'estudios', value: { lista: [...new Set(s.estudiosText.split(/[\n,;]+/).map((x) => x.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean))] } },
       { key: 'instituto', value: { ...s.instituto, cuit: String(s.instituto.cuit || '').replace(/\D/g, '') } },
     ].map((r) => ({ ...r, updated_at: new Date().toISOString() }));

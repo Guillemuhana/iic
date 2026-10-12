@@ -1,4 +1,4 @@
-import { handler, requireUser, HttpError, supabaseAdmin, getSetting } from './_lib/supabase.js';
+import { handler, requireUser, limitUser, HttpError, supabaseAdmin, getSetting } from './_lib/supabase.js';
 import { readTicket } from './_lib/groq.js';
 import { normalizeDocument, maskPersonalText } from '../shared/ticket-rules.js';
 import { isTestDocument } from '../shared/save-validation.js';
@@ -9,7 +9,7 @@ export const config = { maxDuration: 60 };
 // Lee UNA foto (recibo, ticket de gasto o transferencia) y devuelve los datos
 // y las zonas con datos personales a tapar. La imagen no se guarda acá.
 export default handler(['POST'], async (req) => {
-  await requireUser(req);
+  limitUser(await requireUser(req), 'scan', 30);
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
   const image = body.image;
   if (!image || !/^data:image\/(jpeg|png|webp);base64,/.test(image)) {
