@@ -1,13 +1,14 @@
 import { useNavigate } from 'react-router-dom';
 import { loadingBounds } from '../../../shared/ticket-stats.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Search, Download, Receipt, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
+import { Search, Download, Receipt, ChevronLeft, ChevronRight, Camera, Printer, FileDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button, Card, Empty, Spinner, StatusBadge, useToast, cx, IS_DEMO } from '../../components/ui';
 import PeriodPicker, { presetRange } from '../../components/PeriodPicker';
 import TicketDetail from '../../components/TicketDetail';
 import { PageHead } from './AdminLayout';
 import { money, dateAR, dateTimeAR } from '../../lib/format';
+import { outputPdf } from '../../lib/pdf';
 
 const PAGE = 50;
 
@@ -23,6 +24,7 @@ export default function Tickets() {
   const [count, setCount] = useState(0);
   const [sum, setSum] = useState(0);
   const [open, setOpen] = useState(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => { const t = setTimeout(() => setDebounced(q.trim()), 300); return () => clearTimeout(t); }, [q]);
   useEffect(() => { setPage(0); }, [period.from, period.to, status, debounced]);
@@ -90,11 +92,26 @@ export default function Tickets() {
   };
 
 
+  // Imprime lo que muestra el listado: mismo período de carga, estado y búsqueda.
+  const exportPdf = async (print = false) => {
+    setPdfBusy(true);
+    try {
+      await outputPdf(async ({ buildReportPdf }, logo) => {
+        const { data, error } = await fetchAll('*', (query) => query.order('created_at'));
+        if (error) throw error;
+        return buildReportPdf({ tickets: data, from: period.from, to: period.to, basis: 'carga', logo });
+      }, { print, filename: `IIC-recibos-${period.from}-${period.to}.pdf` });
+    } catch (e) { toast(e.message || 'No se pudo generar el PDF.', 'error'); }
+    finally { setPdfBusy(false); }
+  };
+
   return (
     <div className="mx-auto max-w-7xl">
       <PageHead title="Recibos de viáticos" text="Todos los reintegros por fecha de carga en Argentina. Tocá uno para ver las fotos, corregirlo o anularlo."
         actions={<>
           <Button variant="accent" icon={Camera} onClick={() => navigate('/caja/escanear')}>Escanear recibo</Button>
+          <Button variant="outline" icon={Printer} disabled={pdfBusy} onClick={() => exportPdf(true)}>Imprimir</Button>
+          <Button variant="outline" icon={FileDown} loading={pdfBusy} onClick={() => exportPdf()}>PDF</Button>
           <Button variant="outline" icon={Download} onClick={exportCsv}>Exportar CSV</Button>
         </>} />
 

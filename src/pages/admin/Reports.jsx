@@ -7,7 +7,7 @@ import { api } from '../../lib/api';
 import { Button, Card, Empty, Spinner, Badge, Field, useToast, cx } from '../../components/ui';
 import { PageHead } from './AdminLayout';
 import { money, dateAR, dateTimeAR, todayISO, startOfMonth, nextWeeklySend } from '../../lib/format';
-import logoUrl from '../../assets/logo01.png';
+import { outputPdf } from '../../lib/pdf';
 
 const KIND = { automatico: 'Automático semanal', reenvio: 'Reenvío', manual: 'Manual', cierre: 'Cierre de caja' };
 
@@ -50,31 +50,21 @@ export default function Reports() {
 
   const exportPdf = async (print = false) => {
     if (!range.from || !range.to || range.from > range.to) return toast('Indicá un período válido.', 'error');
-    const preview = print ? window.open('', '_blank') : null;
-    if (print && !preview) return toast('Permití abrir ventanas para imprimir el reporte.', 'error');
-    if (preview) { preview.opener = null; preview.document.title = 'Preparando reporte'; preview.document.body.textContent = 'Preparando el reporte PDF…'; }
     setPdfBusy(true);
     try {
-      const [{ buildReportPdf }, logoResponse] = await Promise.all([import('../../../shared/report-pdf.js'), fetch(logoUrl)]);
-      if (!logoResponse.ok) throw new Error('No se pudo cargar el logo del instituto.');
-      const logo = new Uint8Array(await logoResponse.arrayBuffer());
-      const tickets = [];
-      for (let offset = 0; ; offset += 500) {
-        const { data, error } = await supabase.from('tickets').select('*').neq('status', 'anulado')
-          .gte('fecha_comprobante', range.from).lte('fecha_comprobante', range.to)
-          .order('fecha_comprobante').order('id').range(offset, offset + 499);
-        if (error) throw error;
-        tickets.push(...data);
-        if (data.length < 500) break;
-      }
-      const doc = buildReportPdf({ tickets, ...range, logo });
-      if (print) {
-        doc.autoPrint();
-        const url = URL.createObjectURL(doc.output('blob'));
-        preview.location.replace(url);
-        setTimeout(() => URL.revokeObjectURL(url), 300000);
-      } else doc.save(`IIC-reintegros-${range.from}-${range.to}.pdf`);
-    } catch (e) { preview?.close(); toast(e.message || 'No se pudo generar el PDF.', 'error'); }
+      await outputPdf(async ({ buildReportPdf }, logo) => {
+        const tickets = [];
+        for (let offset = 0; ; offset += 500) {
+          const { data, error } = await supabase.from('tickets').select('*').neq('status', 'anulado')
+            .gte('fecha_comprobante', range.from).lte('fecha_comprobante', range.to)
+            .order('fecha_comprobante').order('id').range(offset, offset + 499);
+          if (error) throw error;
+          tickets.push(...data);
+          if (data.length < 500) break;
+        }
+        return buildReportPdf({ tickets, ...range, logo });
+      }, { print, filename: `IIC-reintegros-${range.from}-${range.to}.pdf` });
+    } catch (e) { toast(e.message || 'No se pudo generar el PDF.', 'error'); }
     finally { setPdfBusy(false); }
   };
 

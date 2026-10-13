@@ -2,12 +2,13 @@ import { api } from '../../lib/api';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, Cell } from 'recharts';
-import { TrendingUp, TrendingDown, Minus, Clock } from 'lucide-react';
-import { Card, Spinner, cx, IS_DEMO } from '../../components/ui';
+import { TrendingUp, TrendingDown, Minus, Clock, Printer } from 'lucide-react';
+import { Button, Card, Spinner, cx, IS_DEMO, useToast } from '../../components/ui';
 import PeriodPicker, { presetRange } from '../../components/PeriodPicker';
 import { PageHead } from './AdminLayout';
 import { money, moneyShort, num, dayShort, addDays, dateAR } from '../../lib/format';
 import { useAuth } from '../../context/AuthContext';
+import { outputPdf } from '../../lib/pdf';
 
 const PETROL = '#123A5A';
 const SALINE = '#0065B3';
@@ -27,6 +28,7 @@ function fillDays(rows, from, to) {
 export default function Dashboard() {
   const { profile } = useAuth();
   const { clock } = useOutletContext();
+  const toast = useToast();
   const [period, setPeriod] = useState({ preset: 'mes', ...presetRange('mes') });
   const [stats, setStats] = useState(null);
   const [prev, setPrev] = useState(null);
@@ -57,13 +59,19 @@ export default function Dashboard() {
     return Array.from({ length: 24 }, (_, i) => i).map((h) => ({ hora: `${h}h`, cantidad: m.get(h) || 0 }));
   }, [stats]);
 
+  const printStats = () => outputPdf(({ buildStatsPdf }, logo) => buildStatsPdf({ stats, from: period.from, to: period.to, logo }),
+    { print: true }).catch((e) => toast(e.message || 'No se pudo generar el PDF.', 'error'));
+
   const nombre = profile?.full_name || 'Doctor';
   const saludoNombre = /^mauro\s+pautasso$/i.test(nombre.trim()) ? 'Doctor Mauro Pautasso' : nombre;
   const rango = period.from === period.to ? `el ${dateAR(period.from)}` : `del ${dateAR(period.from)} al ${dateAR(period.to)}`;
 
   return (
     <div className="admin-dashboard mx-auto max-w-7xl">
-      <PageHead title={`${clock.greeting}, ${saludoNombre}`} text="Reintegros de viáticos pagados a pacientes de los estudios, por fecha de carga en Argentina. La fecha del recibo se conserva por separado." actions={<PeriodPicker value={period} onChange={setPeriod} />} />
+      <PageHead title={`${clock.greeting}, ${saludoNombre}`} text="Reintegros de viáticos pagados a pacientes de los estudios, por fecha de carga en Argentina. La fecha del recibo se conserva por separado." actions={<>
+        <PeriodPicker value={period} onChange={setPeriod} />
+        <Button variant="outline" icon={Printer} disabled={!stats} onClick={printStats}>Imprimir</Button>
+      </>} />
 
       {error && <Card className="mb-6 border-lesion/30 bg-lesion-soft p-4 text-sm text-lesion">No se pudieron cargar las estadísticas: {error}</Card>}
 
