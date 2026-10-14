@@ -299,7 +299,6 @@ export function checkTicket(t) {
   if (!t.estudio?.trim()) out.push({ field: 'estudio', level: 'error', message: 'Falta el estudio.' });
   if (!t.visita?.trim()) out.push({ field: 'visita', level: 'error', message: 'Falta la visita (ej. V19).' });
   if (!t.paciente_iniciales?.trim()) out.push({ field: 'paciente_iniciales', level: 'error', message: 'Faltan las iniciales del paciente.' });
-  if (!t.paciente_numero?.trim()) out.push({ field: 'paciente_numero', level: 'error', message: 'Falta el n.º de paciente (va junto a las iniciales).' });
   if (!t.fecha_comprobante) {
     out.push({ field: 'fecha_comprobante', level: 'error', message: 'Falta la fecha.' });
   } else if (!parseDate(t.fecha_comprobante)) {
@@ -311,9 +310,6 @@ export function checkTicket(t) {
   }
   if (t.pago?.monto && t.total && Math.abs(Number(t.pago.monto) - Number(t.total)) > 1) {
     out.push({ field: 'total', level: 'warn', message: `La transferencia es de $${Number(t.pago.monto).toLocaleString('es-AR')} y el recibo dice $${Number(t.total).toLocaleString('es-AR')}.` });
-  }
-  if (t.adjunta_comprobantes === true && !(t.comprobantes_adjuntos || []).length) {
-    out.push({ field: 'comprobantes_adjuntos', level: 'warn', message: 'El recibo dice que adjunta comprobantes. Revisá el detalle de gastos con la foto.' });
   }
   return out;
 }

@@ -1,18 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyTicket } from '../shared/ticket-rules.js';
-import { receiptPairStatus, checkReceiptPair, mergeReceiptPairDocument } from '../shared/receipt-pair.js';
+import { receiptPairStatus, checkReceiptPair, mergeReceiptPairDocument, photoRole, MAX_PAGES } from '../shared/receipt-pair.js';
 
 const receipt = { tipo: 'recibo_viatico', doc: { recibo: { total: 163934, estudio: 'I8F-MC-GPLL', visita: 'V19', paciente_iniciales: 'FA' }, gastos: [{ comercio: 'YPF', importe: 146034 }] } };
 const transfer = { tipo: 'comprobante_transferencia', doc: { transferencia: { monto: 163934, nro_operacion: '182687103836', plataforma: 'Mercado Pago' } } };
 
-test('Requires one receipt and one transfer, not two photos of the same type', () => {
-  assert.equal(receiptPairStatus([receipt]).next, 'comprobante_transferencia');
-  assert.equal(receiptPairStatus([transfer]).next, 'recibo_viatico');
-  assert.equal(receiptPairStatus([receipt, receipt]).complete, false);
+test('Requires one receipt; the transfer is optional and extra pages are allowed', () => {
+  const extra = { tipo: 'otro', doc: { recibo: { total: 5 } } };
+  assert.equal(receiptPairStatus([transfer]).complete, false);
+  assert.equal(receiptPairStatus([receipt]).complete, true);
   assert.equal(receiptPairStatus([receipt, transfer]).complete, true);
-  assert.equal(receiptPairStatus([receipt, transfer, transfer]).complete, false);
-  assert.ok(checkReceiptPair(emptyTicket(), [receipt]));
+  assert.equal(receiptPairStatus([receipt, extra, extra, transfer]).extra, 2);
+  assert.equal(receiptPairStatus([receipt, extra, extra, transfer]).complete, true);
+  assert.equal(receiptPairStatus(Array.from({ length: MAX_PAGES + 1 }, (_, i) => (i ? extra : receipt))).complete, false);
+  assert.equal(checkReceiptPair({ ...emptyTicket(), total: 163934 }, [receipt]), null);
+  assert.ok(checkReceiptPair(emptyTicket(), [transfer]));
+});
+
+test('Only the first receipt and transfer fill the data; repeated documents become extra pages', () => {
+  assert.equal(photoRole([], { tipo: 'recibo_viatico', recibo: {} }), 'recibo_viatico');
+  assert.equal(photoRole([receipt], { tipo: 'recibo_viatico', recibo: {} }), 'otro');
+  assert.equal(photoRole([receipt], { tipo: 'comprobante_transferencia', transferencia: {} }), 'comprobante_transferencia');
+  assert.equal(photoRole([receipt, transfer], { tipo: 'comprobante_transferencia', transferencia: {} }), 'otro');
+  assert.equal(photoRole([receipt], { tipo: 'comprobante_gasto' }), 'otro');
 });
 
 test('Both documents belong to a single reimbursement and amounts are never added', () => {

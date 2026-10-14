@@ -18,7 +18,7 @@ test('The reported 152.34 versus 152034 scale error cannot pass even when both a
 });
 
 test('Missing patient fields and unreviewed or unmasked pictures cannot be saved or reported', () => {
-  for (const key of ['estudio', 'visita', 'paciente_iniciales', 'paciente_numero', 'fecha_comprobante', 'nro_operacion']) {
+  for (const key of ['estudio', 'visita', 'paciente_iniciales', 'fecha_comprobante', 'nro_operacion']) {
     assert.ok(validateReimbursement({ ...ticket, [key]: null }, photos));
     assert.ok(savedReimbursementError({ ...saved, [key]: null }));
   }
@@ -26,6 +26,18 @@ test('Missing patient fields and unreviewed or unmasked pictures cannot be saved
   assert.ok(validateReimbursement(ticket, [{ ...photos[0], boxes: [] }, photos[1]]));
   assert.ok(savedReimbursementError({ ...saved, extraction: { fotos: [{ tipo: 'recibo_viatico', leido: photos[0].doc }] } }));
   assert.equal(savedReimbursementError(saved), null);
+});
+
+test('Patient number and transfer are optional; extra pages need review but no forced masking', () => {
+  const noTransfer = { ...ticket, paciente_numero: null, pago: null, nro_operacion: null };
+  const extra = { tipo: 'otro', doc: {}, privacyConfirmed: true, boxes: [] };
+  assert.equal(validateReimbursement(noTransfer, [photos[0]]), null);
+  assert.equal(validateReimbursement(noTransfer, [photos[0], extra, extra]), null);
+  assert.ok(validateReimbursement(noTransfer, [photos[0], { ...extra, privacyConfirmed: false }]));
+  assert.ok(validateReimbursement({ ...ticket, nro_operacion: null }, photos));
+  const fotos = [saved.extraction.fotos[0], { tipo: 'otro', leido: {}, tapas: 0, privacidad_revisada: true }];
+  assert.equal(savedReimbursementError({ ...noTransfer, image_paths: ['a.jpg', 'c.jpg'], extraction: { fotos } }), null);
+  assert.ok(savedReimbursementError({ ...noTransfer, image_paths: ['a.jpg'], extraction: { fotos } }));
 });
 
 test('Explicit fictitious samples are excluded; a study called PRUEBA is not sufficient evidence', () => {

@@ -16,12 +16,12 @@ import { useAuth } from '../../context/AuthContext';
 import { money, dateAR, todayISO } from '../../lib/format';
 import { locateReceipt } from '../../lib/receipt-locator';
 import { checkTicket, emptyTicket, mergeDocument } from '../../../shared/ticket-rules.js';
-import { receiptPairStatus, checkReceiptPair, mergeReceiptPairDocument } from '../../../shared/receipt-pair.js';
+import { receiptPairStatus, checkReceiptPair, mergeReceiptPairDocument, photoRole, MAX_PAGES } from '../../../shared/receipt-pair.js';
 import { validateReimbursement } from '../../../shared/save-validation.js';
 import { rotatePhotoBox } from '../../../shared/photo-geometry.js';
 
 const READING_STEPS = ['Orientando el recibo y ubicando el importe', 'Leyendo texto impreso y manuscrito', 'Verificando cada cifra del importe', 'Ubicando firma y datos personales'];
-const DOC_LABEL = { recibo_viatico: 'Recibo de viáticos', comprobante_gasto: 'Ticket de gasto', comprobante_transferencia: 'Transferencia', otro: 'Documento' };
+const DOC_LABEL = { recibo_viatico: 'Recibo de viáticos', comprobante_gasto: 'Ticket de gasto', comprobante_transferencia: 'Transferencia', otro: 'Hoja adicional' };
 
 export default function ScanFlow() {
   const nav = useNavigate();
@@ -81,22 +81,21 @@ export default function ScanFlow() {
     clearInterval(timer.current);
     timer.current = setInterval(() => setStep((s) => Math.min(s + 1, READING_STEPS.length - 1)), 1700);
     try {
+      if (photos.length >= MAX_PAGES) throw new Error(`Se pueden guardar hasta ${MAX_PAGES} hojas por paciente.`);
       const located = await locateReceipt(prepared.blob).catch(() => null);
       if (located?.rotation) {
         prepared = track(await prepareTicketImage(located.canvas));
         setPending(prepared);
       }
       const r = await api('scan-ticket', { body: { image: prepared.aiDataUrl, originalImage: prepared.originalDataUrl, amountRegion: located?.bbox } });
-      const validReceipt = r.doc.tipo === 'recibo_viatico' && r.doc.recibo;
-      const validTransfer = r.doc.tipo === 'comprobante_transferencia' && r.doc.transferencia;
-      if (!validReceipt && !validTransfer) throw new Error('Necesitamos el recibo de viáticos o la transferencia. Sacá una foto de cada documento completo.');
-      if (photos.some(p => p.tipo === r.doc.tipo)) throw new Error(`Ya escaneaste este tipo de documento. Falta ${receiptPairStatus(photos).next === 'recibo_viatico' ? 'el recibo de viáticos' : 'la transferencia'} del mismo paciente.`);
+      // El primer recibo y la primera transferencia cargan los datos; el resto se guarda como hoja adicional.
+      const tipo = photoRole(photos, r.doc);
       const rotation = [90, 180, 270].includes(r.doc.rotacion) ? r.doc.rotacion : 0;
       if (rotation) prepared = track(await prepareTicketImage(await rotateBlob(prepared.blob, rotation)));
       const photo = {
         id: crypto.randomUUID(),
         img: prepared,
-        tipo: r.doc.tipo,
+        tipo,
         rotation: 0,
         privacyConfirmed: false,
         boxes: r.doc.datos_personales.filter((d) => d.box).map((d) => rotatePhotoBox({ ...d.box, tipo: d.tipo }, rotation)),
@@ -108,8 +107,8 @@ export default function ScanFlow() {
         doc: { tipo: r.doc.tipo, recibo: r.doc.recibo, gastos: r.doc.gastos, transferencia: r.doc.transferencia },
       };
       setPhotos((list) => { setCurrent(list.length); return [...list, photo]; });
-      setTicket((t) => mergeReceiptPairDocument(t, r.doc));
-      setMeta((m) => ({
+      if (tipo !== 'otro') setTicket((t) => mergeReceiptPairDocument(t, r.doc));
+      if (tipo !== 'otro') setMeta((m) => ({
         fieldConfidence: r.doc.recibo ? { ...m.fieldConfidence, ...r.fieldConfidence } : m.fieldConfidence,
         duplicate: m.duplicate || r.duplicate,
         observaciones: r.observaciones ? [...m.observaciones, r.observaciones] : m.observaciones,
@@ -161,7 +160,7 @@ export default function ScanFlow() {
     if (photos[i]?.tipo === 'comprobante_transferencia') {
       setTicket(value => ({ ...value, pago: null, nro_operacion: null, medio_pago: null }));
     } else if (photos[i]?.tipo === 'recibo_viatico') {
-      const remaining = photos.filter((_, j) => j !== i);
+      const remaining = photos.filter((p, j) => j !== i && p.tipo !== 'otro');
       const fresh = remaining.reduce((value, p) => mergeDocument(value, p.doc), emptyTicket());
       // A transfer alone must never fill the handwritten receipt amount.
       setTicket({ ...fresh, total: null, monto_detalle: null });
@@ -240,14 +239,14 @@ export default function ScanFlow() {
   if (stage === 'camera') {
     if (DemoCamera) return <DemoCamera onCapture={onCapture} onClose={() => (photos.length ? setStage('review') : nav(-1))} used={photos.map((p) => p.tipo)} />;
     return <Camera onCapture={onCapture} onClose={() => (photos.length ? setStage('review') : nav(-1))}
-      hint={`${photos.length ? '2' : '1'} de 2 · ${receiptPairStatus(photos).next === 'recibo_viatico' ? 'Recibo de viáticos completo' : 'Transferencia del mismo paciente'}`} />;
+      hint={`Hoja ${photos.length + 1} · ${receiptPairStatus(photos).receipt ? 'Otra hoja o transferencia del mismo paciente' : 'Recibo de viáticos completo'}`} />;
   }
 
   const photo = photos[current];
   const warnings = checkTicket(ticket);
   const pair = receiptPairStatus(photos);
   const pairError = checkReceiptPair(ticket, photos);
-  const nextLabel = pair.next === 'recibo_viatico' ? 'recibo de viáticos' : 'transferencia';
+  const addLabel = pair.receipt ? 'Agregar otra hoja' : 'Escanear el recibo de viáticos';
 
   return (
     <div className="min-h-full bg-paper">
@@ -332,12 +331,13 @@ export default function ScanFlow() {
         <>
           <fieldset disabled={saving} className="mx-auto grid min-w-0 max-w-6xl gap-6 px-4 pb-36 pt-5 lg:grid-cols-[1.1fr_1fr]">
             <Card className="p-4 lg:col-span-2">
-              <p className="font-bold text-petrol">Dos documentos · un paciente · un reintegro</p>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <p className={cx('rounded-xl p-3', pair.receipt ? 'bg-saline/10 text-saline-dark' : 'bg-fog text-slate')}>1. Recibo de viáticos {pair.receipt ? '✓' : 'pendiente'}</p>
-                <p className={cx('rounded-xl p-3', pair.transfer ? 'bg-saline/10 text-saline-dark' : 'bg-fog text-slate')}>2. Transferencia {pair.transfer ? '✓' : 'pendiente'}</p>
+              <p className="font-bold text-petrol">Un paciente · un reintegro · {photos.length} hoja{photos.length === 1 ? '' : 's'}</p>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                <p className={cx('rounded-xl p-3', pair.receipt ? 'bg-saline/10 text-saline-dark' : 'bg-fog text-slate')}>Recibo de viáticos {pair.receipt ? '✓' : 'pendiente'}</p>
+                <p className={cx('rounded-xl p-3', pair.transfer ? 'bg-saline/10 text-saline-dark' : 'bg-fog text-slate')}>Transferencia {pair.transfer ? '✓' : '(opcional)'}</p>
+                <p className={cx('rounded-xl p-3', pair.extra ? 'bg-saline/10 text-saline-dark' : 'bg-fog text-slate')}>Hojas adicionales: {pair.extra}</p>
               </div>
-              <p className="mt-3 text-sm text-slate">{pair.complete ? 'Revisá los datos y las dos fotos del mismo paciente. El importe se registra una sola vez.' : `Falta escanear ${nextLabel} del mismo paciente. Los datos de la primera foto se conservan.`}</p>
+              <p className="mt-3 text-sm text-slate">{pair.complete ? 'Si el paciente tiene más hojas, agregalas antes de guardar. Todas quedan en el mismo registro y el importe se registra una sola vez.' : 'Falta escanear el recibo de viáticos del paciente. Las hojas ya escaneadas se conservan.'}</p>
               {pair.complete && pairError && <p role="alert" className="mt-3 rounded-xl bg-iodine-soft p-3 text-sm text-iodine">{pairError}</p>}
             </Card>
             <aside id="photo-review" className="scroll-mt-24 space-y-4">
@@ -350,7 +350,7 @@ export default function ScanFlow() {
                       <span className="absolute inset-x-0 bottom-0 bg-petrol/85 px-1 text-[9px] font-semibold text-white">{DOC_LABEL[p.tipo]}</span>
                     </button>
                   ))}
-                  {!pair.complete && <button onClick={() => setStage('camera')} className="grid h-16 w-14 shrink-0 place-items-center rounded-xl border-2 border-dashed border-mist text-slate hover:border-petrol-3" aria-label={`Escanear ${nextLabel}`}>
+                  {!pair.full && <button onClick={() => setStage('camera')} className="grid h-16 w-14 shrink-0 place-items-center rounded-xl border-2 border-dashed border-mist text-slate hover:border-petrol-3" aria-label={addLabel}>
                     <ImagePlus className="size-5" />
                   </button>}
                 </div>
@@ -374,7 +374,9 @@ export default function ScanFlow() {
                     <label className="mt-3 flex items-start gap-3 rounded-xl border border-mist bg-white p-4 text-sm">
                       <input type="checkbox" className="mt-0.5 size-5 shrink-0 accent-petrol" checked={photo.privacyConfirmed}
                         onChange={e => { const confirmed = e.target.checked; setPhotos(list => list.map(p => p.id === photo.id ? { ...p, privacyConfirmed: confirmed } : p)); }} />
-                      Revisé esta foto: es un comprobante real, está derecha, la firma y los datos personales están tapados, y el importe y el estudio se ven.
+                      {photo.tipo === 'otro'
+                        ? 'Revisé esta hoja: es del mismo paciente, está derecha y la firma y los datos personales que aparezcan están tapados.'
+                        : 'Revisé esta foto: es un comprobante real, está derecha, la firma y los datos personales están tapados, y el importe y el estudio se ven.'}
                     </label>
                   </>
                 )}
@@ -399,7 +401,7 @@ export default function ScanFlow() {
                   onChange={monto => setTicket(value => ({ ...value, pago: { ...value.pago, monto } }))} />
                   <p className="mt-2 text-sm text-slate">Ambos importes deben coincidir con las fotos.</p></div>}
                 <details className="mt-3"><summary className="cursor-pointer text-sm font-semibold">Revisar lectura del importe</summary>
-                {photos.filter((p) => p.amountReview).map((p) => (
+                {photos.filter((p) => p.amountReview && p.tipo !== 'otro').map((p) => (
                   <div key={p.id} className={cx('mt-3 rounded-xl p-3 text-sm', p.amountReview.confirmed ? 'bg-fog text-slate' : 'bg-iodine-soft text-iodine')}>
                     <p>{p.amountReview.message}</p>
                     {p.amountPreviewUrl && <img src={p.amountPreviewUrl} alt="Línea del importe ampliada para comparar cada cifra" className="mt-3 max-h-64 w-full rounded-lg border border-mist bg-white object-contain" />}
@@ -412,12 +414,12 @@ export default function ScanFlow() {
               <Card className="p-4 sm:p-6">
                 <TicketForm value={ticket} onChange={setTicket} fieldConfidence={meta.fieldConfidence} compact />
               </Card>
-              {!pair.complete && <button onClick={() => setStage('camera')}
+              {!pair.full && <button onClick={() => setStage('camera')}
                 className="flex w-full items-center gap-3 rounded-2xl border-2 border-dashed border-mist bg-white px-4 py-4 text-left hover:border-petrol-3">
                 <ImagePlus className="size-6 text-petrol-3" />
                 <span>
-                  <span className="block font-semibold">Escanear {nextLabel} · 2 de 2</span>
-                  <span className="block text-[13px] text-slate">Del mismo paciente. Se guarda junto con la primera foto.</span>
+                  <span className="block font-semibold">{addLabel} · hoja {photos.length + 1}</span>
+                  <span className="block text-[13px] text-slate">Del mismo paciente: otra página, la transferencia (opcional) u otro papel. Se guarda junto con las demás.</span>
                 </span>
               </button>}
             </div>
@@ -430,7 +432,7 @@ export default function ScanFlow() {
               </div>
               {pair.complete
                 ? <Button className="w-full sm:w-auto" size="lg" icon={Check} loading={saving} disabled={amountBusy || saving} onClick={trySave}>Confirmar y guardar</Button>
-                : <Button className="w-full sm:w-auto" size="lg" icon={CameraIcon} onClick={() => setStage('camera')}>Escanear {nextLabel} · 2 de 2</Button>}
+                : <Button className="w-full sm:w-auto" size="lg" icon={CameraIcon} disabled={pair.full} onClick={() => setStage('camera')}>Escanear el recibo de viáticos</Button>}
             </div>
           </div>
         </>
@@ -457,7 +459,7 @@ export default function ScanFlow() {
 function ReadSummary({ photos, warnings, meta, onPhotos }) {
   const pct = Math.round(Math.min(...photos.map((p) => p.confidence ?? 1)) * 100);
   const tapas = photos.reduce((a, p) => a + p.boxes.length, 0);
-  const good = pct >= 85 && warnings.length === 0 && photos.every((p) => !p.amountReview || p.amountReview.confirmed);
+  const good = pct >= 85 && warnings.length === 0 && photos.every((p) => p.tipo === 'otro' || !p.amountReview || p.amountReview.confirmed);
   return (
     <div className="space-y-3">
       <div className={cx('flex items-start gap-3 rounded-2xl p-4', good ? 'bg-saline/12 text-saline-dark' : 'bg-iodine-soft text-iodine')}>

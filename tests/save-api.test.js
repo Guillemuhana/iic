@@ -35,7 +35,7 @@ test('Save API rejects incomplete, wrong-scale and unreviewed payloads before in
     return result;
   };
   try {
-    assert.equal((await call({ ...payload, paciente_numero: null })).status, 422);
+    assert.equal((await call({ ...payload, paciente_iniciales: null })).status, 422);
     assert.equal((await call({ ...payload, total: 152.34, pago: { monto: 152.34 } })).status, 422);
     assert.equal((await call({ ...payload, raw_text: 'SIMULACIÓN SIN VALIDEZ' })).status, 422);
     assert.equal((await call({ ...payload, extraction: { fotos: payload.extraction.fotos.map(p => ({ ...p, privacidad_revisada: false })) } })).status, 422);

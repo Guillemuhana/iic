@@ -1,5 +1,5 @@
 import { checkTicket } from './ticket-rules.js';
-import { checkReceiptPair } from './receipt-pair.js';
+import { checkReceiptPair, MAX_PAGES } from './receipt-pair.js';
 
 export function isTestDocument(text) {
   const normalized = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -12,10 +12,13 @@ export function validateReimbursement(ticket, photos) {
   if (error) return error.message;
   const pairError = checkReceiptPair(ticket, photos);
   if (pairError) return pairError;
-  if (!ticket.nro_operacion?.trim()) return 'Falta el número de operación de la transferencia.';
+  const hasTransfer = photos.some(p => p.tipo === 'comprobante_transferencia');
+  if (hasTransfer && !ticket.nro_operacion?.trim()) return 'Falta el número de operación de la transferencia.';
   if (isTestDocument(ticket.raw_text) || photos.some(p => isTestDocument(p.raw_text))) return 'Es un documento de prueba o simulación. No se puede registrar como reintegro real.';
   for (const photo of photos) {
     if (!photo.privacyConfirmed) return 'Revisá cada foto: debe estar derecha, con firma y datos personales tapados e importe visible.';
+    // Extra pages may carry no personal data; the person confirms each one above.
+    if (photo.tipo === 'otro') continue;
     if (!(photo.boxes?.length || photo.redactionCount)) return 'Tapá la firma y los datos personales del paciente antes de guardar cada foto.';
     const amount = photo.tipo === 'recibo_viatico' ? ticket.total : ticket.pago?.monto;
     const candidates = [photo.amountReview?.extracted, photo.amountReview?.checked].filter(n => n != null && Number.isFinite(Number(n)) && Number(n) > 0);
@@ -28,6 +31,7 @@ export function validateReimbursement(ticket, photos) {
 
 export function savedReimbursementError(ticket) {
   const photos = (Array.isArray(ticket.extraction?.fotos) ? ticket.extraction.fotos : []).map(p => ({ tipo: p.tipo, doc: p.leido, privacyConfirmed: p.privacidad_revisada === true, redactionCount: p.tapas, amountReview: p.verificacion_importe }));
-  if (!Array.isArray(ticket.image_paths) || ticket.image_paths.length !== 2 || new Set(ticket.image_paths).size !== 2) return 'Faltan las dos fotos del reintegro.';
+  const paths = ticket.image_paths;
+  if (!Array.isArray(paths) || !paths.length || paths.length > MAX_PAGES || new Set(paths).size !== paths.length || paths.length !== photos.length) return 'Faltan las fotos del reintegro.';
   return validateReimbursement(ticket, photos);
 }

@@ -50,10 +50,8 @@ export default function TicketForm({ value, onChange, fieldConfidence = {}, comp
           </Field>
           <F {...ctx} k="visita" label="Visita" placeholder="Ej. V19" mono upper />
           <F {...ctx} k="paciente_iniciales" label="Iniciales del paciente" placeholder="Ej. FA" mono upper />
-          <F {...ctx} k="paciente_numero" label="N.º de paciente" placeholder="Ej. 1023" mono upper />
         </div>
-        <p className="mt-2 text-[12px] text-slate">Por privacidad no se registra el nombre del paciente: solo iniciales y número.</p>
-        <p className="mt-1 text-[12px] text-slate">Si el número no aparece en la foto, completalo con el identificador del paciente en el estudio. Es obligatorio.</p>
+        <p className="mt-2 text-[12px] text-slate">Por privacidad no se registra el nombre del paciente: solo sus iniciales.</p>
       </Section>
 
       <Section title="Importe recibido">

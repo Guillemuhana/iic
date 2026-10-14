@@ -2,7 +2,7 @@
 
 Sistema de carga de **recibos de reintegro de viáticos** de los pacientes de estudios clínicos del **Instituto de Investigaciones Clínicas de Córdoba**.
 
-- **Administración** (celular): escanea el recibo y, en el mismo registro, los tickets de gastos adjuntos y el comprobante de transferencia. La IA lee estudio, visita (ej. V19), iniciales + n.º de paciente, importe, casillas SI/NO y comprobantes; la persona revisa y guarda.
+- **Administración** (celular): escanea el recibo y, en el mismo registro, todas las hojas del paciente (hasta 15) y, si la hay, la transferencia (opcional). La IA lee estudio, visita (ej. V19), iniciales del paciente, importe y casillas SI/NO; la persona revisa y guarda.
 - **Privacidad**: antes de guardar, se tapa la firma del paciente y sus datos personales (nombre, dirección, DNI, CUIT/CUIL, CBU/CVU/alias, teléfono, email) en todas las fotos. Solo se almacena la foto tapada.
 - **Contadora**: recibe todos los viernes a las 12:00 de Argentina un reporte a **estudiocaballerosalva@gmail.com**. El corte va de viernes 12:00 a viernes 12:00, por fecha de carga (no fecha del recibo). Incluye todo lo cargado en ese intervalo, excepto anulados, y pendientes anteriores si hubo errores. Excel ordenado por estudio con resumen y todas las fotos tapadas, CSV y email con totales. Sin recibos no se envía.
 - **Admin (Dr. Pautasso)**: panel con estadísticas, listado completo, edición/anulación, reenvíos, usuarios y configuración.
@@ -86,13 +86,13 @@ npx vercel dev          # frontend + /api juntos en http://localhost:3000
 ## Cómo funciona la carga
 
 1. **Foto del recibo**. Cámara trasera a máxima resolución, guía de encuadre, linterna y enfoque continuo. Si la foto sale movida, oscura o con reflejo, pide repetirla.
-2. **Agregar foto** (opcional, en el mismo registro): tickets de gastos adjuntos (YPF, peajes, etc.) y el comprobante de transferencia (Mercado Pago o banco).
+2. **Agregar otra hoja** (opcional, en el mismo registro): las demás páginas del mismo paciente y el comprobante de transferencia (Mercado Pago o banco), si lo hay. Solo el primer recibo y la primera transferencia cargan datos; el resto se guarda como *hoja adicional* (se revisa y se tapa igual, pero no cambia el importe). Hasta 15 hojas por paciente.
 3. **Lectura IA en dos pasadas (Groq)**, por cada foto. Primero transcribe todo el texto, impreso y manuscrito. Después extrae los datos a JSON:
    - del recibo: estudio, visita, iniciales y n.º de paciente (en *Aclaración*), fecha, "Recibí la suma de", total, casillas *Adjunta comprobantes / Recibe viático / Desayuno*;
    - de los tickets: comercio, detalle, medio de pago e importe;
    - de la transferencia: monto, fecha, hora y n.º de operación (se cruza con el total del recibo).
 4. **Tapado de datos personales**. La IA ubica la firma y los datos del paciente y los tapa. La persona ve cada foto con las tapas y puede moverlas, agrandarlas, quitarlas o agregar más. Si alguna foto queda sin ningún dato tapado, se pide confirmación antes de guardar. Al guardar, el teléfono pinta las tapas sobre la imagen (no se pueden quitar), endereza la foto y recién ahí la sube. La foto original nunca se guarda.
-5. **Validación**: estudio ajustado a la lista de estudios activos, visita normalizada (`v 19` → `V19`), faltantes (n.º de paciente), monto de la transferencia vs. recibo, casilla "adjunta comprobantes" sin fotos de tickets, fechas imposibles, y aviso si ya existe un reintegro del mismo paciente para esa visita.
+5. **Validación**: estudio ajustado a la lista de estudios activos, visita normalizada (`v 19` → `V19`), faltantes (estudio, visita, iniciales, fecha, importe), monto y n.º de operación de la transferencia solo si se escaneó, fechas imposibles, y aviso si ya existe un reintegro del mismo paciente para esa visita. El n.º de paciente no se pide.
 
 **Qué se guarda y qué no**
 - No se guarda el nombre ni el DNI del paciente. La base lo fuerza con un trigger: el paciente queda solo como iniciales + n.º.

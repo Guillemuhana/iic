@@ -80,9 +80,10 @@ test('Recibo + ticket asomando + transferencia se combinan', () => {
 
 test('Avisos del recibo', () => {
   const w = checkTicket({ ...emptyTicket(), total: 1000, pago: { monto: 900 }, adjunta_comprobantes: true, fecha_comprobante: '2026-10-06' });
-  assert.ok(w.find((x) => x.field === 'paciente_numero'));
+  assert.ok(!w.find((x) => x.field === 'paciente_numero'));
+  assert.ok(w.find((x) => x.field === 'paciente_iniciales'));
   assert.ok(w.find((x) => x.field === 'total' && /transferencia/.test(x.message)));
-  assert.ok(w.find((x) => x.field === 'comprobantes_adjuntos'));
+  assert.ok(!w.find((x) => x.field === 'comprobantes_adjuntos'));
   assert.ok(checkTicket(emptyTicket()).find((x) => x.level === 'error'));
 });
 

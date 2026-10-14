@@ -56,12 +56,14 @@ export default handler(['POST'], async (req) => {
   // Posible duplicado: mismo estudio, paciente y visita
   let duplicate = null;
   const r = doc.recibo;
-  if (r?.estudio && r?.paciente_numero && r?.visita) {
+  // El n.º de paciente es opcional: sin él, se compara por iniciales.
+  if (r?.estudio && r?.visita && (r.paciente_numero || r.paciente_iniciales)) {
+    const [field, value] = r.paciente_numero ? ['paciente_numero', r.paciente_numero] : ['paciente_iniciales', r.paciente_iniciales];
     const { data: dup } = await supabaseAdmin()
       .from('tickets')
       .select('id, created_at, total, fecha_comprobante')
       .eq('estudio', r.estudio)
-      .eq('paciente_numero', r.paciente_numero)
+      .eq(field, value)
       .eq('visita', r.visita)
       .neq('status', 'anulado')
       .limit(1)
