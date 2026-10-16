@@ -92,6 +92,7 @@ function seed() {
   return {
     profiles: USERS.map((u) => ({ ...u, active: true, created_at: new Date(Date.now() - 40 * 86400e3).toISOString() })),
     tickets,
+    estudios: estudios.map(codigo => ({ id: uuid(), codigo, estado: 'activo', activo: true, created_at: new Date().toISOString() })),
     email_reports: reports,
     settings: [
       { key: 'instituto', value: { nombre: 'Instituto de Investigaciones Clínicas de Córdoba', responsable: 'Dr. Pautasso', cuit: '30710851111' } },
@@ -343,7 +344,7 @@ async function handleApi(url, init) {
     await wait(3400);
     const kind = window.__demoNext || 'recibo';
     const s = SCANS[kind];
-    const estudios = db.settings.find((x) => x.key === 'estudios')?.value?.lista || [];
+    const estudios = db.estudios.filter(e => e.activo).map(e => e.codigo);
     const doc = normalizeDocument(s, { estudios });
     const r = doc.recibo;
     const dup = r && db.tickets.find((t) => t.status !== 'anulado' && t.estudio === r.estudio && t.paciente_numero && t.paciente_numero === r.paciente_numero && t.visita === r.visita);

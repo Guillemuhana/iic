@@ -13,6 +13,7 @@ test('Save API rejects incomplete, wrong-scale and unreviewed payloads before in
     const url = String(input);
     let data;
     if (url.includes('/auth/v1/user')) data = { id, email: 'test@example.test' };
+    else if (url.includes('/rest/v1/estudios')) data = [{ codigo: 'I8F-MC-GPLL' }];
     else if (url.includes('/rest/v1/profiles')) data = { id, role: 'administracion', active: true };
     else if (url.includes('/rest/v1/tickets') && options.method === 'POST') {
       writes++; inserted = JSON.parse(options.body); data = { ...inserted, id: crypto.randomUUID() };
@@ -40,6 +41,7 @@ test('Save API rejects incomplete, wrong-scale and unreviewed payloads before in
     assert.equal((await call({ ...payload, raw_text: 'SIMULACIÓN SIN VALIDEZ' })).status, 422);
     assert.equal((await call({ ...payload, extraction: { fotos: payload.extraction.fotos.map(p => ({ ...p, privacidad_revisada: false })) } })).status, 422);
     assert.equal((await call({ ...payload, image_paths: ['2026/10/another-user/a.jpg', '2026/10/another-user/b.jpg'] })).status, 403);
+    assert.equal((await call({ ...payload, estudio: 'DESCONOCIDO' })).status, 422);
     assert.equal(writes, 0);
     assert.equal((await call({ ...payload, created_by: 'another-user', status: 'enviado', sent_at: '2026-10-08' })).status, 200);
     assert.equal(writes, 1);

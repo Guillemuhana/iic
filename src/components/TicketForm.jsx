@@ -4,24 +4,35 @@ import { Field, cx } from './ui';
 import { MEDIOS_PAGO, parseAmount, checkTicket } from '../../shared/ticket-rules.js';
 import { supabase } from '../lib/supabase';
 import MoneyInput from './MoneyInput';
+import { codigoEstudio, ordenarEstudios } from '../../shared/estudios.js';
 
-let estudiosCache = null;
 function useEstudios() {
-  const [list, setList] = useState(estudiosCache || []);
+  const [list, setList] = useState([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    if (estudiosCache) return;
-    supabase.from('settings').select('value').eq('key', 'estudios').maybeSingle().then(({ data }) => {
-      estudiosCache = data?.value?.lista || [];
-      setList(estudiosCache);
-    });
+    let mounted = true;
+    const load = async () => {
+      try {
+        const { data, error } = await supabase.from('estudios').select('*').eq('activo', true);
+        if (error) throw error;
+        if (mounted) { setList(ordenarEstudios(data || [])); setError(''); }
+      } catch {
+        if (mounted) setError('No se pudo cargar el catálogo de estudios. Volvé a intentar.');
+      } finally { if (mounted) setLoading(false); }
+    };
+    load();
+    window.addEventListener('focus', load);
+    return () => { mounted = false; window.removeEventListener('focus', load); };
   }, []);
-  return list;
+  return { list, error, loading };
 }
 
 /** Datos editables del recibo de viáticos, con marcas de revisión por campo. */
 export default function TicketForm({ value, onChange, fieldConfidence = {}, compact }) {
   const t = value;
-  const estudios = useEstudios();
+  const { list: estudios, error: estudiosError, loading: estudiosLoading } = useEstudios();
+  const selected = estudios.find(e => codigoEstudio(e.codigo) === codigoEstudio(t.estudio));
   const warnings = checkTicket(t);
   const flagFor = (field) => {
     const w = warnings.find((x) => x.field === field);
@@ -43,10 +54,15 @@ export default function TicketForm({ value, onChange, fieldConfidence = {}, comp
       <Section title="Estudio y paciente">
         <div className={grid}>
           <Field label="Estudio" flag={flagFor('estudio')}>
-            <input className="field font-mono uppercase" list="estudios-activos" data-flag={flagFor('estudio')?.level}
-              value={t.estudio ?? ''} placeholder="Ej. I8F-MC-GPLL"
-              onChange={(e) => onChange({ ...t, estudio: e.target.value.toUpperCase() })} />
-            <datalist id="estudios-activos">{estudios.map((e) => <option key={e} value={e} />)}</datalist>
+            <select className="field" aria-label="Estudio" value={selected?.codigo ?? t.estudio ?? ''}
+              disabled={estudiosLoading} onChange={set('estudio')}>
+              <option value="">{estudiosLoading ? 'Cargando estudios...' : 'Seleccioná un estudio'}</option>
+              {t.estudio && !selected && <option value={t.estudio} disabled={!t.id}>{t.estudio}</option>}
+              {estudios.map(e => <option key={e.id} value={e.codigo}>{e.codigo}</option>)}
+            </select>
+            {estudiosError && <p role="alert" className="text-sm text-lesion">{estudiosError}</p>}
+            {!estudiosLoading && !estudiosError && !estudios.length && <p className="text-sm text-slate">No hay estudios habilitados. Consultá al administrador.</p>}
+            {t.estudio && !selected && <p className="text-sm text-slate">{t.id ? 'Valor histórico conservado.' : 'El código leído no está habilitado. Seleccioná un estudio del catálogo.'}</p>}
           </Field>
           <F {...ctx} k="visita" label="Visita" placeholder="Ej. V19" mono upper />
           <F {...ctx} k="paciente_iniciales" label="Iniciales del paciente" placeholder="Ej. FA" mono upper />

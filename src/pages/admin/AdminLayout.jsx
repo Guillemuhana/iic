@@ -10,6 +10,7 @@ const NAV_GROUPS = [
   { label: 'Gestión', items: [
     { to: '/panel/comprobantes', label: 'Recibos', icon: Receipt },
     { to: '/panel/envios', label: 'Envíos a contadora', icon: Send },
+    { to: '/panel/estudios', label: 'Estudios', icon: Receipt },
     { to: '/panel/turnos', label: 'Turnos', icon: CalendarDays },
   ] },
   { label: 'Administración', items: [

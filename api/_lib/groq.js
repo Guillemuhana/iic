@@ -29,7 +29,9 @@ async function readAmountDigits(url, deadline) {
 export const VISION_MODEL = () => process.env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b';
 
 const EXTRACT_PROMPT = (estudios = []) => `Analizá directamente la imagen. Orientá mentalmente el documento y extraé los datos en JSON. Transcribí texto impreso y manuscrito en texto_leido, sin transcribir firmas. Si un dígito es ambiguo, escribí [?] y dejá el importe en null. El signo $ no es un dígito 4.
-${estudios.length ? `\nESTUDIOS ACTIVOS DEL INSTITUTO (el código manuscrito casi seguro es uno de estos): ${estudios.join(', ')}\n` : ''}
+${estudios.length ? `\nCATALOGO DE ESTUDIOS HABILITADOS DEL INSTITUTO: ${estudios.join(', ')}\n` : ''}
+Usá el catálogo para reconocer códigos, pero no fuerces una coincidencia. Transcribí lo visible: si hay dos candidatos parecidos, indicá la duda en observaciones y bajá confianza.estudio. Revisá especialmente números y sufijos: SHASTA-5/SHASTA-10, VESPER 4/VESPER 5, AROAPOC3-3003/AROAPOC3-3009 y GSK Zenith - 1/GSK Zenith - 2. No elijas una variante sin evidencia visible.
+
 Devolvé SOLO un objeto JSON con estas claves (null si no aparece; nunca inventes):
 {
   "texto_leido": "transcripción literal del texto visible, impreso y manuscrito; [FIRMA] en lugar de firmas",

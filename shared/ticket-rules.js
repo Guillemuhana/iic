@@ -134,16 +134,20 @@ function distance(a, b) {
 export function matchEstudio(value, known = []) {
   const code = normalizeEstudioCode(value);
   if (!code || !known.length) return { value: code, matched: false, original: code };
-  const list = known.map(normalizeEstudioCode).filter(Boolean);
+  const list = [...new Set(known.map(normalizeEstudioCode).filter(Boolean))];
   if (list.includes(code)) return { value: code, matched: true, original: code };
+  // Short codes carry too little evidence for automatic correction.
+  if (code.replace(/-/g, '').length < 5) return { value: code, matched: false, original: code };
   let best = null;
   let bestD = Infinity;
+  let tied = false;
   for (const k of list) {
     const d = Math.min(distance(canon(code), canon(k)), distance(code.replace(/-/g, ''), k.replace(/-/g, '')));
-    if (d < bestD) { bestD = d; best = k; }
+    if (d < bestD) { bestD = d; best = k; tied = false; }
+    else if (d === bestD) tied = true;
   }
   const limit = Math.max(1, Math.floor(best.replace(/-/g, '').length / 4));
-  return bestD <= limit ? { value: best, matched: true, original: code } : { value: code, matched: false, original: code };
+  return !tied && bestD <= limit ? { value: best, matched: true, original: code } : { value: code, matched: false, original: code };
 }
 
 /** "v 19", "Visita 19", "V-19", "19" → "V19". Deja textos como "Screening" en mayúscula inicial. */

@@ -18,7 +18,6 @@ export default function SettingsPage() {
         instituto: m.instituto || { nombre: '', responsable: '' },
         contadora: { nombre: '', ...(m.contadora || {}), email: m.contadora?.email || 'estudiocaballerosalva@gmail.com', ccText: (m.contadora?.cc || []).join(', ') },
         envio_automatico: scheduleConfig(m.envio_automatico),
-        estudiosText: (m.estudios?.lista || []).join('\n'),
       });
     });
   }, []);
@@ -37,7 +36,6 @@ export default function SettingsPage() {
       { key: 'contadora', value: { ...contadora, email: contadora.email.trim(), cc } },
       // El <select> entrega el día como texto; se guarda normalizado (número).
       { key: 'envio_automatico', value: scheduleConfig(s.envio_automatico) },
-      { key: 'estudios', value: { lista: [...new Set(s.estudiosText.split(/[\n,;]+/).map((x) => x.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean))] } },
       { key: 'instituto', value: { ...s.instituto, cuit: String(s.instituto.cuit || '').replace(/\D/g, '') } },
     ].map((r) => ({ ...r, updated_at: new Date().toISOString() }));
     const { error } = await supabase.from('settings').upsert(rows);
@@ -81,12 +79,7 @@ export default function SettingsPage() {
           </div>
           <p className="mt-4 text-sm text-slate">Próximo envío con estos ajustes: {nextWeeklySend(new Date(), s.envio_automatico)}. En el plan gratuito puede ejecutarse dentro de esa hora. Guardá los cambios para aplicarlos.</p>
         </Card>
-        <Card className="p-6">
-          <h2 className="font-bold">Estudios activos</h2>
-          <p className="mt-1 text-sm text-slate">Un código por línea. La lectura usa esta lista para corregir códigos manuscritos (ej. I/1, 8/B, 0/O) y en el formulario aparecen como sugerencia.</p>
-          <textarea className="field mt-4 min-h-32 font-mono uppercase" value={s.estudiosText} placeholder={'I8F-MC-GPLL\nJ2A-MC-GZPO'}
-            onChange={(e) => setS({ ...s, estudiosText: e.target.value })} />
-        </Card>
+        <Link className="surface block rounded-2xl p-6 font-bold text-petrol" to="/panel/estudios">Administrar estudios</Link>
         <Card className="p-6">
           <h2 className="font-bold">Instituto</h2>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">

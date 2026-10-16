@@ -10,6 +10,7 @@ import CajaHome from './pages/caja/CajaHome';
 import ScanFlow from './pages/caja/ScanFlow';
 import AdminLayout from './pages/admin/AdminLayout';
 
+const Estudios = lazy(() => import('./pages/admin/Estudios'));
 const Dashboard = lazy(() => import('./pages/admin/Dashboard'));
 const Appointments = lazy(() => import('./pages/admin/Appointments'));
 const Tickets = lazy(() => import('./pages/admin/Tickets'));
@@ -50,6 +51,7 @@ export default function App() {
               <Route path="/caja/escanear" element={<Protected><ScanFlow /></Protected>} />
               <Route path="/panel" element={<Protected roles={['admin']}><AdminLayout /></Protected>}>
                 <Route index element={<Dashboard />} />
+                <Route path="estudios" element={<Estudios />} />
                 <Route path="turnos" element={<Appointments />} />
                 <Route path="comprobantes" element={<Tickets />} />
                 <Route path="envios" element={<Reports />} />

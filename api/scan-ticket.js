@@ -21,8 +21,9 @@ export default handler(['POST'], async (req) => {
     throw new HttpError(413, 'Las imágenes son demasiado pesadas o inválidas. Repetí la foto.');
   }
 
-  const [estudiosCfg, instituto] = await Promise.all([getSetting('estudios'), getSetting('instituto')]);
-  const estudios = (estudiosCfg?.lista || []).filter(Boolean);
+  const [catalogo, instituto] = await Promise.all([supabaseAdmin().from('estudios').select('codigo').eq('activo', true), getSetting('instituto')]);
+  if (catalogo.error) throw new HttpError(503, 'No se pudo cargar el catálogo de estudios.');
+  const estudios = (catalogo.data || []).map(e => e.codigo);
 
   const started = Date.now();
   const { data, ocr, model, amountReview } = await readTicket(image, { estudios, originalImage, amountRegion: body.amountRegion });
