@@ -25,6 +25,7 @@ export default function Tickets() {
   const [sum, setSum] = useState(0);
   const [open, setOpen] = useState(null);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => { const t = setTimeout(() => setDebounced(q.trim()), 300); return () => clearTimeout(t); }, [q]);
   useEffect(() => { setPage(0); }, [period.from, period.to, status, debounced]);
@@ -55,6 +56,8 @@ export default function Tickets() {
   const load = useCallback(async () => {
     const seq = ++loadSeq.current;
     setRows(null);
+    setLoadError(null);
+    try {
     const [{ data, count: c, error }, totals] = await Promise.all([
       buildQuery('*, profiles:created_by(full_name)', { count: 'exact' })
         .order('created_at', { ascending: false }).order('id')
@@ -63,13 +66,30 @@ export default function Tickets() {
     ]);
     // Si cambiaron los filtros mientras tanto, esta respuesta ya no corresponde.
     if (seq !== loadSeq.current) return;
-    if (error) { toast(error.message, 'error'); setRows([]); return; }
+    if (error || totals.error) throw error || totals.error;
     setRows(data);
     setCount(c || 0);
     setSum((totals.data || []).reduce((a, t) => a + Math.round(Number(t.total || 0) * 100), 0) / 100);
-  }, [buildQuery, fetchAll, page, toast]);
+    } catch (err) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(err.message || 'No se pudieron consultar los recibos.');
+      setRows([]); setCount(0); setSum(0);
+    }
+  }, [buildQuery, fetchAll, page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const refresh = () => { if (document.visibilityState === 'visible') load(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    const timer = setInterval(refresh, 60000);
+    return () => {
+      ++loadSeq.current;
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+      clearInterval(timer);
+    };
+  }, [load]);
 
   const exportCsv = async () => {
     if (IS_DEMO) return toast('En la demo no se descargan archivos. En la app real se baja un CSV que abre en Excel.', 'info');
@@ -129,14 +149,20 @@ export default function Tickets() {
         </div>
       </div>
 
+      <p className="mb-3 text-sm text-slate">Listado por fecha de carga: {dateAR(period.from)} al {dateAR(period.to)}. Para cargas anteriores, ampliá el período.</p>
+      {loadError && <div role="alert" className="mb-4 rounded-xl bg-lesion-soft p-4 text-lesion">
+        <p>No se pudieron cargar los recibos. Esto no significa que se hayan borrado.</p>
+        <p className="mt-1 text-sm">{loadError}</p>
+        <Button variant="outline" className="mt-3" onClick={load}>Reintentar</Button>
+      </div>}
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between border-b border-mist px-5 py-3 text-sm">
-          <span className="text-slate">{count} recibos</span>
-          <span>Total sin anulados: <b className="tabular-nums">{money(sum)}</b></span>
+          <span className="text-slate">{rows === null ? 'Cargando recibos...' : loadError ? 'Listado no disponible' : `${count} recibos`}</span>
+          <span>Total sin anulados: <b className="tabular-nums">{rows === null || loadError ? '\u2014' : money(sum)}</b></span>
         </div>
         {rows === null ? (
           <div className="grid place-items-center py-20"><Spinner /></div>
-        ) : rows.length === 0 ? (
+        ) : loadError ? null : rows.length === 0 ? (
           <Empty icon={Receipt} title="No hay recibos con esos filtros" text="Probá con otro período o borrá la búsqueda." />
         ) : (
           <div className="scrollbar-thin overflow-x-auto">
